@@ -8,6 +8,7 @@ export type ColorModel = 'hsl' | 'hsv';
 
 export interface LogEntry { id: string; level: LogLevel; message: string; time: number; data?: unknown; }
 export interface SourceImage { fileName: string; fileType: string; kind: 'raster' | 'svg' | 'pdf'; width: number; height: number; imageData: ImageData; previewUrl: string; }
+export interface TraceOptions { minArea: number; simplify: number; smooth: number; precision: number; }
 
 export interface VectorOptions {
   mode: VectorMode;
@@ -15,9 +16,9 @@ export interface VectorOptions {
   blur: number;
   livePreview: boolean;
   background: { enabled: boolean; method: BackgroundMethod; tolerance: number; minLightness: number; sampleInset: number; alphaThreshold: number; showMask: boolean; };
-  color: { quantizer: Quantizer; colors: number; iterations: number; sampleLimit: number; excludeLineart: boolean; lineartDarkness: number; minClusterPixels: number; };
-  binary: { thresholdMode: ThresholdMode; threshold: number; sauvolaWindow: number; sauvolaK: number; invert: boolean; fill: string; };
-  trace: { minArea: number; simplify: number; smooth: number; precision: number; };
+  color: { quantizer: Quantizer; colors: number; iterations: number; sampleLimit: number; excludeLineart: boolean; lineartDarkness: number; minClusterPixels: number; blur: number; trace: TraceOptions; underpaintStrokeWidth: number; };
+  binary: { thresholdMode: ThresholdMode; threshold: number; sauvolaWindow: number; sauvolaK: number; invert: boolean; fill: string; blur: number; trace: TraceOptions; strokeWidth: number; };
+  trace: TraceOptions;
   output: { openInEditor: boolean; addBackground: boolean; backgroundColor: string; };
 }
 
