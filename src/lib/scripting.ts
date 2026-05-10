@@ -5,7 +5,7 @@ export interface ScriptOutput { options: VectorOptions; editor: EditorSettings; 
 const aliases: Record<string, string> = {
   'vector.mode': 'mode', 'vector.maxSide': 'maxSide', 'vector.blur': 'blur', live: 'livePreview',
   'bg.method': 'background.method', 'bg.tolerance': 'background.tolerance', 'bg.minLightness': 'background.minLightness', 'bg.showMask': 'background.showMask',
-  'color.colors': 'color.colors', 'color.quantizer': 'color.quantizer', 'color.iterations': 'color.iterations', 'color.samples': 'color.sampleLimit', 'color.excludeLineart': 'color.excludeLineart',
+  'color.colors': 'color.colors', 'color.quantizer': 'color.quantizer', 'color.iterations': 'color.iterations', 'color.samples': 'color.sampleLimit', 'color.minClusterPixels': 'color.minClusterPixels', 'color.excludeLineart': 'color.excludeLineart', 'color.lineartDarkness': 'color.lineartDarkness',
   'color.blur': 'color.blur', 'color.underpaintStrokeWidth': 'color.underpaintStrokeWidth',
   'color.trace.minArea': 'color.trace.minArea', 'color.trace.simplify': 'color.trace.simplify', 'color.trace.smooth': 'color.trace.smooth', 'color.trace.precision': 'color.trace.precision',
   'line.threshold': 'binary.threshold', 'line.mode': 'binary.thresholdMode', 'line.fill': 'binary.fill', 'line.blur': 'binary.blur', 'line.strokeWidth': 'binary.strokeWidth',
@@ -41,25 +41,40 @@ set trace.simplify = 0.65
 set output.openInEditor = false
 run vectorize
 
-# Layer-specific watercolor example
+# Watercolor pattern recommended script
 preset watercolor-maximum
 set vector.mode = layered
 set vector.maxSide = 2050
 set vector.blur = 0.35
+
+set bg.method = edge-connected
+set bg.tolerance = 15
+set bg.minLightness = 72
+
+set color.quantizer = oklab-kmeans
+set color.colors = 42
+set color.iterations = 32
+set color.samples = 220000
+set color.minClusterPixels = 4
 set color.excludeLineart = false
 set color.lineartDarkness = 90
+
 set color.blur = 0.72
 set line.blur = 0.22
+
 set color.underpaintStrokeWidth = 0.85
 set line.strokeWidth = 1.25
+
 set color.trace.minArea = 5
 set color.trace.simplify = 0.62
 set color.trace.smooth = 62
 set color.trace.precision = 2
+
 set line.trace.minArea = 3
 set line.trace.simplify = 0.38
 set line.trace.smooth = 28
 set line.trace.precision = 2
+
 set output.openInEditor = false
 run vectorize
 

@@ -8,19 +8,21 @@ A React + TypeScript + Vite application for SVG editing and bitmap vectorization
 - Scales and offsets real SVG stroke widths.
 - Detects SVG palettes and lets you enable, disable, or replace individual colors.
 - Vectorizes PNG/JPG/WebP/BMP/GIF/SVG/PDF sources into editable SVG paths.
-- Lets vectorization stay in the Vectorization tab instead of automatically opening the Editing tab.
+- Removes scanned paper/backgrounds with edge-connected masking.
+- Builds layered color + lineart SVGs for watercolor and ink artwork.
+- Provides separate color and lineart blur, trace, stroke, and underpaint controls.
 - Supports live vectorization preview with a debounce.
-- Includes a persistent console for debug/info/warning/error logs.
-- Includes a small scripting language for reproducible parameter changes and actions.
+- Includes preview zoom, fit, 100%, reset, keyboard, wheel, and pan navigation.
+- Includes a persistent console, copyable logs/scripts, syntax-highlighted scripts, and progress feedback.
 - Exports SVG and PNG.
 
-## Vectorization algorithms
+## Vectorization Algorithms
 
 The vectorization engine is implemented in `src/lib/vectorize.ts` and is designed for scanned illustrations, watercolor artwork, line drawings, and mixed lineart + color artwork.
 
-### Background removal
+### Background Removal
 
-The default background remover is **edge-connected paper masking**:
+The default background remover is `edge-connected` paper masking:
 
 1. Estimate the paper color from image borders and corners.
 2. Compare pixels in OKLab color space using perceptual distance.
@@ -28,49 +30,38 @@ The default background remover is **edge-connected paper masking**:
 4. Flood-fill only the candidate mask connected to the image edges.
 5. Keep light internal artwork, such as white petals, if it is not connected to the outer paper region.
 
-This is much safer for scanned drawings than a simple global white threshold.
-
 Available background modes:
 
 - `edge-connected`: recommended for scanned paper and watercolor images.
 - `global-light`: removes all sufficiently light paper-like pixels globally.
 - `none`: disables background removal except transparent pixels.
 
-### Binary / lineart tracing
+### Modes And Layers
 
-Available thresholding methods:
+- `color`: quantizes the retained foreground into flat color paths.
+- `binary`: traces a thresholded lineart mask.
+- `layered`: creates a `color-layer` group under a `lineart-layer` group.
 
-- `manual`: explicit grayscale threshold.
-- `otsu`: automatic global Otsu threshold.
-- `sauvola`: adaptive local threshold for uneven lighting or paper shadows.
+Layered mode is usually better for watercolor plus ink because soft washes and dark outlines need different preprocessing. The color layer uses `color.*` settings for quantization and filled shapes. The lineart layer uses `line.*` aliases for thresholded ink paths.
 
-### Color vectorization
+### Layer-Specific Watercolor Controls
 
-Available quantizers:
+Use `vector.blur` as a shared starting blur, then override with `color.blur` and `line.blur` when needed. A higher color blur can merge paper texture and wash grain before color tracing. A lower line blur preserves fine ink.
 
-- `oklab-kmeans`: perceptual k-means++ clustering in OKLab.
-- `rgb-median-cut`: faster median-cut color quantization.
+Use `color.trace.*` and `line.trace.*` independently:
 
-### Layered vectorization
+- `minArea` removes tiny traced islands.
+- `simplify` controls how aggressively paths are straightened.
+- `smooth` rounds traced contours into cubic curves.
+- `precision` controls SVG path coordinate decimals.
 
-The default mode is `layered`, which creates:
+`color.lineartDarkness` controls which dark pixels are treated as lineart when building the layered masks. Raising it can catch more ink, but too much can turn shadows or saturated paint into black blobs. If the ink looks weak, prefer increasing `line.strokeWidth`; it thickens the rendered lineart without reclassifying more pixels as ink.
 
-```xml
-<g id="color-layer">...</g>
-<g id="lineart-layer">...</g>
-```
+`color.underpaintStrokeWidth` adds a same-color stroke around color fills. Small values help neighboring color shapes overlap slightly, which can hide white gaps from traced seams. Keeping `color.excludeLineart = false` can also let color sit underneath ink instead of leaving cutouts.
 
-This is usually better for hand-drawn watercolor/ink images than a single flat color pass, because lineart and soft color washes behave differently.
+### Contour Extraction
 
-### Contour extraction
-
-The tracer builds SVG paths from binary masks using:
-
-- connected mask boundaries,
-- polygon extraction,
-- Ramer-Douglas-Peucker simplification,
-- optional cubic smoothing,
-- SVG `fill-rule="evenodd"` groups.
+The tracer builds SVG paths from binary masks using connected mask boundaries, polygon extraction, Ramer-Douglas-Peucker simplification, optional cubic smoothing, and SVG `fill-rule="evenodd"` groups.
 
 ## Scripting
 
@@ -94,7 +85,48 @@ Built-in presets:
 - `svg-light`
 - `lineart-clean`
 
-Useful aliases:
+### Watercolor Pattern Recommended Script
+
+```txt
+preset watercolor-maximum
+
+set vector.mode = layered
+set vector.maxSide = 2050
+set vector.blur = 0.35
+
+set bg.method = edge-connected
+set bg.tolerance = 15
+set bg.minLightness = 72
+
+set color.quantizer = oklab-kmeans
+set color.colors = 42
+set color.iterations = 32
+set color.samples = 220000
+set color.minClusterPixels = 4
+set color.excludeLineart = false
+set color.lineartDarkness = 90
+
+set color.blur = 0.72
+set line.blur = 0.22
+
+set color.underpaintStrokeWidth = 0.85
+set line.strokeWidth = 1.25
+
+set color.trace.minArea = 5
+set color.trace.simplify = 0.62
+set color.trace.smooth = 62
+set color.trace.precision = 2
+
+set line.trace.minArea = 3
+set line.trace.simplify = 0.38
+set line.trace.smooth = 28
+set line.trace.precision = 2
+
+set output.openInEditor = false
+run vectorize
+```
+
+Useful aliases include:
 
 ```txt
 set vector.mode = layered
@@ -107,12 +139,18 @@ set color.quantizer = oklab-kmeans
 set color.colors = 24
 set color.iterations = 20
 set color.samples = 140000
+set color.minClusterPixels = 8
 set color.excludeLineart = true
+set color.lineartDarkness = 150
+set color.blur = 0.3
+set color.underpaintStrokeWidth = 0
 set line.mode = manual
 set line.threshold = 148
-set trace.minArea = 5
+set line.blur = 0.3
+set line.strokeWidth = 0
 set trace.simplify = 0.65
-set trace.smooth = 6
+set color.trace.simplify = 0.65
+set line.trace.simplify = 0.45
 set output.openInEditor = false
 set editor.hue = 20
 set editor.saturation = 15
@@ -122,18 +160,49 @@ run export-svg
 run export-png
 ```
 
-## Slider manual input
+## Preview Navigation
+
+- Use `-` and `+` to zoom out or in.
+- Use `Fit` to fit the current image or SVG in the preview viewport.
+- Use `100%` to view at actual SVG/image pixel size.
+- Use `Reset` to return to fit zoom and recenter the preview.
+- Focus the preview viewport, then use `+`/`=` and `-` for zoom, `0` for fit, `1` for 100%, and arrow keys to pan.
+- Use Ctrl+wheel or Cmd+wheel to zoom around the pointer. Normal wheel or trackpad scrolling pans the viewport.
+- Hold Space while the preview is hovered or focused, then drag with the primary pointer button to pan.
+
+## Console And Scripts
+
+- `Copy log` copies the current console log text.
+- `Copy script` copies the script editor contents.
+- `Clear console` clears the visible log stream and records a fresh cleared message.
+- Logs and the script editor scroll independently.
+- The script editor highlights commands, paths, values, booleans, comments, and invalid line shapes.
+- Auto-scroll can keep the log stream pinned to new messages while leaving the script editor untouched.
+
+## Progress Bar
+
+A fixed top progress bar appears during image loading, vectorization, live preview updates, and PNG export. Determinate operations show a percent and current step detail. Steps that cannot estimate exact completion use an indeterminate sweep. The bar clears when the operation finishes or fails.
+
+## Troubleshooting Watercolor
+
+- Black blobs: lower `color.lineartDarkness`.
+- Weak ink: increase `line.strokeWidth` before raising `color.lineartDarkness`.
+- White gaps: increase `color.underpaintStrokeWidth` and keep `color.excludeLineart = false`.
+- Jagged or straight color areas: lower `color.trace.simplify`, raise `color.trace.smooth`, or increase `color.blur`.
+- Lost fine ink detail: lower `line.blur` and lower `line.trace.simplify`.
+
+## Slider Manual Input
 
 Every slider value pill is clickable. Click the value, type the exact numeric value, and press Enter or leave the field to commit.
 
-## Local development
+## Local Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Type-check and production build
+## Type-Check And Production Build
 
 ```bash
 npm run typecheck
@@ -142,7 +211,7 @@ npm run build
 
 The generated production output is in `dist/`.
 
-## Deploy to Vercel
+## Deploy To Vercel
 
 Push this project to GitHub and import it into Vercel as a Vite project. The included `vercel.json` contains an SPA rewrite to `/index.html`.
 
