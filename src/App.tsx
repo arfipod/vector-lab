@@ -67,16 +67,16 @@ export default function App() {
     return source;
   }, [loadVectorFile, source, sourceFile, sourceMaxSide]);
 
-  const vectorize = useCallback(async (options: VectorOptions, manual: boolean): Promise<void> => {
-    if (busy) return;
+  const vectorize = useCallback(async (options: VectorOptions, manual: boolean): Promise<VectorResult | null> => {
+    if (busy) { log('warn', 'Vectorization is already running.'); return null; }
     let actual: SourceImage | null = null;
     try {
       actual = await ensureSource(options);
     } catch (error) {
       log('error', `Cannot load source before vectorizing: ${(error as Error).message}`);
-      return;
+      return null;
     }
-    if (!actual) { log('warn', 'Load an image before vectorizing.'); return; }
+    if (!actual) { log('warn', 'Load an image before vectorizing.'); return null; }
     setBusy(true);
     const progressLabel = manual ? 'Vectorizing image' : 'Updating live preview';
     const reportVectorProgress = (next: ProgressUpdate): void => showProgress({ ...next, label: progressLabel });
@@ -87,7 +87,8 @@ export default function App() {
       const next = await vectorizeImage(actual.imageData, options, (message, data) => log('debug', message, data), reportVectorProgress);
       setResult(next);
       if (manual && options.output.openInEditor) { setEditorSvg(next.svg); setTab('editing'); log('info', 'Vector result opened in Editing.'); }
-    } catch (error) { log('error', `Vectorization failed: ${(error as Error).message}`); }
+      return next;
+    } catch (error) { log('error', `Vectorization failed: ${(error as Error).message}`); return null; }
     finally { setBusy(false); clearProgress(); }
   }, [busy, clearProgress, ensureSource, log, showProgress]);
 
@@ -120,19 +121,54 @@ export default function App() {
     else void loadEditorRasterFile(file);
   };
 
-  const sendToEditor = (): void => { if (!result) return; setEditorSvg(result.svg); setTab('editing'); log('info', 'Vector result sent to Editing.'); };
   const currentSvg = tab === 'editing' ? editedSvg : result?.svg;
-  const exportSvg = (): void => { if (!currentSvg) return; downloadText(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'svg'), currentSvg); log('info', 'SVG exported.'); };
-  const exportPng = (): void => {
-    if (!currentSvg) return;
+  const sendToEditor = useCallback((svg = result?.svg): void => { if (!svg) return; setEditorSvg(svg); setTab('editing'); log('info', 'Vector result sent to Editing.'); }, [log, result?.svg]);
+  const exportSvg = useCallback((svg = currentSvg): void => {
+    if (!svg) return;
+    downloadText(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'svg'), svg);
+    log('info', 'SVG exported.');
+  }, [currentSvg, log, source?.fileName, tab]);
+  const exportPng = useCallback(async (svg = currentSvg): Promise<void> => {
+    if (!svg) return;
     showProgress({ label: 'Exporting PNG', detail: 'Preparing SVG', value: 0.05 });
     log('info', 'PNG export started.');
-    void downloadSvgPng(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'png'), currentSvg, 2, showProgress)
-      .then(() => log('info', 'PNG exported.'))
-      .catch((e) => log('error', `PNG export failed: ${(e as Error).message}`))
-      .finally(clearProgress);
+    try {
+      await downloadSvgPng(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'png'), svg, 2, showProgress);
+      log('info', 'PNG exported.');
+    } catch (e) {
+      log('error', `PNG export failed: ${(e as Error).message}`);
+    } finally {
+      clearProgress();
+    }
+  }, [clearProgress, currentSvg, log, showProgress, source?.fileName, tab]);
+  const runVectorScript = (script: string): void => {
+    void (async () => {
+      try {
+        const out = runScript(script, vectorOptions, editor);
+        setVectorOptions(out.options);
+        setEditor(out.editor);
+        out.messages.forEach((m) => log('info', `Script: ${m}`));
+        let latestSvg = currentSvg ?? result?.svg;
+        for (const action of out.actions) {
+          if (action === 'vectorize') {
+            const next = await vectorize(out.options, true);
+            latestSvg = next?.svg;
+          } else if (action === 'send-to-editor') {
+            if (latestSvg) sendToEditor(latestSvg);
+            else log('warn', 'Script: no SVG is available to send to Editing.');
+          } else if (action === 'export-svg') {
+            if (latestSvg) exportSvg(latestSvg);
+            else log('warn', 'Script: no SVG is available to export.');
+          } else if (action === 'export-png') {
+            if (latestSvg) await exportPng(latestSvg);
+            else log('warn', 'Script: no SVG is available to export.');
+          }
+        }
+      } catch (e) {
+        log('error', `Script error: ${(e as Error).message}`);
+      }
+    })();
   };
-  const runVectorScript = (script: string): void => { try { const out = runScript(script, vectorOptions, editor); setVectorOptions(out.options); setEditor(out.editor); out.messages.forEach((m) => log('info', `Script: ${m}`)); out.actions.forEach((a) => { if (a === 'vectorize') void vectorize(out.options, true); if (a === 'send-to-editor') sendToEditor(); if (a === 'export-svg') exportSvg(); if (a === 'export-png') exportPng(); }); } catch (e) { log('error', `Script error: ${(e as Error).message}`); } };
 
   const setBg = <K extends keyof VectorOptions['background']>(key: K, value: VectorOptions['background'][K]): void => setVectorOptions((o) => ({ ...o, background: { ...o.background, [key]: value } }));
   const setColor = <K extends keyof VectorOptions['color']>(key: K, value: VectorOptions['color'][K]): void => setVectorOptions((o) => ({ ...o, color: { ...o.color, [key]: value } }));
@@ -167,9 +203,9 @@ export default function App() {
           {(vectorOptions.mode === 'binary' || vectorOptions.mode === 'layered') ? <section className="section"><h2>5. Lineart</h2><label className="select-label">Threshold<select value={vectorOptions.binary.thresholdMode} onChange={(e) => setBinary('thresholdMode', e.target.value as VectorOptions['binary']['thresholdMode'])}><option value="manual">Manual</option><option value="otsu">Otsu automatic</option><option value="sauvola">Sauvola adaptive</option></select></label><SliderField label="Threshold" value={vectorOptions.binary.threshold} min={0} max={255} step={1} onChange={(v) => setBinary('threshold', v)} />{vectorOptions.binary.thresholdMode === 'sauvola' ? <><SliderField label="Sauvola window" value={vectorOptions.binary.sauvolaWindow} min={9} max={101} step={2} suffix=" px" onChange={(v) => setBinary('sauvolaWindow', v)} /><SliderField label="Sauvola k" value={vectorOptions.binary.sauvolaK} min={0.05} max={0.8} step={0.01} onChange={(v) => setBinary('sauvolaK', v)} /></> : null}<label className="check"><input type="checkbox" checked={vectorOptions.binary.invert} onChange={(e) => setBinary('invert', e.target.checked)} /> Invert</label><label className="select-label">Line color<input type="color" value={vectorOptions.binary.fill} onChange={(e) => setBinary('fill', e.target.value)} /></label></section> : null}
           <section className="section"><h2>6. Contours</h2><SliderField label="Minimum area" value={vectorOptions.trace.minArea} min={0} max={500} step={1} suffix=" px²" onChange={(v) => setTrace('minArea', v)} /><SliderField label="RDP simplification" value={vectorOptions.trace.simplify} min={0} max={8} step={0.05} suffix=" px" onChange={(v) => setTrace('simplify', v)} /><SliderField label="Curve smoothing" value={vectorOptions.trace.smooth} min={0} max={100} step={1} suffix="%" onChange={(v) => setTrace('smooth', v)} /><SliderField label="Precision" value={vectorOptions.trace.precision} min={0} max={4} step={1} onChange={(v) => setTrace('precision', v)} /></section>
           <section className="section"><h2>7. Advanced layer controls</h2><div className="layer-control-grid">{(vectorOptions.mode === 'color' || vectorOptions.mode === 'layered') ? <div className="layer-control-group"><h3>Color layer</h3><SliderField label="Color blur" value={vectorOptions.color.blur} min={0} max={4} step={0.05} suffix=" px" onChange={(v) => setColor('blur', v)} /><SliderField label="Underpaint stroke" value={vectorOptions.color.underpaintStrokeWidth} min={0} max={6} step={0.05} suffix=" px" onChange={(v) => setColor('underpaintStrokeWidth', v)} /><SliderField label="Trace min area" value={vectorOptions.color.trace.minArea} min={0} max={500} step={1} suffix=" px²" onChange={(v) => setColorTrace('minArea', v)} /><SliderField label="Trace simplify" value={vectorOptions.color.trace.simplify} min={0} max={8} step={0.05} suffix=" px" onChange={(v) => setColorTrace('simplify', v)} /><SliderField label="Trace smooth" value={vectorOptions.color.trace.smooth} min={0} max={100} step={1} suffix="%" onChange={(v) => setColorTrace('smooth', v)} /></div> : null}{(vectorOptions.mode === 'binary' || vectorOptions.mode === 'layered') ? <div className="layer-control-group"><h3>Lineart layer</h3><SliderField label="Lineart blur" value={vectorOptions.binary.blur} min={0} max={4} step={0.05} suffix=" px" onChange={(v) => setBinary('blur', v)} /><SliderField label="Lineart stroke" value={vectorOptions.binary.strokeWidth} min={0} max={8} step={0.05} suffix=" px" onChange={(v) => setBinary('strokeWidth', v)} /><SliderField label="Trace min area" value={vectorOptions.binary.trace.minArea} min={0} max={500} step={1} suffix=" px²" onChange={(v) => setBinaryTrace('minArea', v)} /><SliderField label="Trace simplify" value={vectorOptions.binary.trace.simplify} min={0} max={8} step={0.05} suffix=" px" onChange={(v) => setBinaryTrace('simplify', v)} /><SliderField label="Trace smooth" value={vectorOptions.binary.trace.smooth} min={0} max={100} step={1} suffix="%" onChange={(v) => setBinaryTrace('smooth', v)} /></div> : null}</div></section>
-          <section className="section"><h2>8. Output</h2><label className="check"><input type="checkbox" checked={vectorOptions.output.addBackground} onChange={(e) => setOut('addBackground', e.target.checked)} /> Add real background rectangle</label><label className="select-label">Background color<input type="color" value={vectorOptions.output.backgroundColor} onChange={(e) => setOut('backgroundColor', e.target.value)} /></label><button type="button" className="primary" disabled={!source || busy} onClick={() => void vectorize(vectorOptions, true)}>{busy ? 'Vectorizing…' : 'Vectorize'}</button><div className="button-row"><button type="button" disabled={!result} onClick={sendToEditor}>Send to Editing</button><button type="button" disabled={!currentSvg} onClick={exportSvg}>Export SVG</button><button type="button" disabled={!currentSvg} onClick={exportPng}>Export PNG</button></div>{result ? <div className="readout"><strong>{result.stats.paths} paths · {result.stats.contours} contours</strong><span>{result.stats.colors} colors · {Math.round(result.stats.elapsedMs)} ms</span>{result.stats.warnings.map((w) => <span className="warning" key={w}>{w}</span>)}</div> : null}</section>
+          <section className="section"><h2>8. Output</h2><label className="check"><input type="checkbox" checked={vectorOptions.output.addBackground} onChange={(e) => setOut('addBackground', e.target.checked)} /> Add real background rectangle</label><label className="select-label">Background color<input type="color" value={vectorOptions.output.backgroundColor} onChange={(e) => setOut('backgroundColor', e.target.value)} /></label><button type="button" className="primary" disabled={!source || busy} onClick={() => void vectorize(vectorOptions, true)}>{busy ? 'Vectorizing…' : 'Vectorize'}</button><div className="button-row"><button type="button" disabled={!result} onClick={() => sendToEditor()}>Send to Editing</button><button type="button" disabled={!currentSvg} onClick={() => exportSvg()}>Export SVG</button><button type="button" disabled={!currentSvg} onClick={() => void exportPng()}>Export PNG</button></div>{result ? <div className="readout"><strong>{result.stats.paths} paths · {result.stats.contours} contours</strong><span>{result.stats.colors} colors · {Math.round(result.stats.elapsedMs)} ms</span>{result.stats.warnings.map((w) => <span className="warning" key={w}>{w}</span>)}</div> : null}</section>
         </>}
-        {tab === 'editing' ? <section className="section sticky-actions"><button className="primary" disabled={!editedSvg} onClick={exportSvg}>Export SVG</button><button disabled={!editedSvg} onClick={exportPng}>Export PNG</button></section> : null}
+        {tab === 'editing' ? <section className="section sticky-actions"><button className="primary" disabled={!editedSvg} onClick={() => exportSvg()}>Export SVG</button><button disabled={!editedSvg} onClick={() => void exportPng()}>Export PNG</button></section> : null}
       </aside>
       <PreviewStage title={tab === 'editing' ? 'Editing preview' : 'Vectorization preview'} subtitle={tab === 'editing' ? `${palette.length} colors detected` : result ? `${result.stats.paths} paths · ${result.stats.contours} contours` : source ? `${source.width} × ${source.height}px source` : 'No image loaded'} svg={previewSvg} imageUrl={previewImage} imageAlt={previewSvg ? 'SVG preview' : 'Source preview'} intrinsicSize={previewSize} />
     </main>

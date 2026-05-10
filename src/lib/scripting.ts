@@ -19,7 +19,19 @@ export const scriptPresetNames = Object.freeze(Object.keys(presets));
 function clone<T>(v: T): T { return structuredClone(v); }
 function parse(raw: string): unknown { const v = raw.trim(); if (/^(true|yes|on)$/i.test(v)) return true; if (/^(false|no|off)$/i.test(v)) return false; const n = Number(v.replace(',', '.')); return Number.isFinite(n) && v !== '' ? n : v.replace(/^['"]|['"]$/g, ''); }
 function setPath(obj: Record<string, unknown>, path: string, value: unknown): void { const parts = path.split('.'); let cur = obj; for (let i = 0; i < parts.length - 1; i++) { if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {}; cur = cur[parts[i]] as Record<string, unknown>; } cur[parts[parts.length - 1]] = value; }
-function merge(base: VectorOptions, partial: Partial<VectorOptions>): VectorOptions { return { ...base, ...partial, background: { ...base.background, ...partial.background }, color: { ...base.color, ...partial.color, trace: { ...base.color.trace, ...partial.color?.trace } }, binary: { ...base.binary, ...partial.binary, trace: { ...base.binary.trace, ...partial.binary?.trace } }, trace: { ...base.trace, ...partial.trace }, output: { ...base.output, ...partial.output } }; }
+function merge(base: VectorOptions, partial: Partial<VectorOptions>): VectorOptions {
+  const trace = { ...base.trace, ...partial.trace };
+  const inheritedTrace = partial.trace ?? {};
+  return {
+    ...base,
+    ...partial,
+    background: { ...base.background, ...partial.background },
+    color: { ...base.color, ...partial.color, trace: { ...base.color.trace, ...inheritedTrace, ...partial.color?.trace } },
+    binary: { ...base.binary, ...partial.binary, trace: { ...base.binary.trace, ...inheritedTrace, ...partial.binary?.trace } },
+    trace,
+    output: { ...base.output, ...partial.output }
+  };
+}
 function setVectorPath(options: VectorOptions, path: string, value: unknown): void {
   setPath(options as unknown as Record<string, unknown>, path, value);
   if (path === 'blur') {
