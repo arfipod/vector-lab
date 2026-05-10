@@ -40,16 +40,28 @@ function gray(img: ImageData): Uint8Array { const out = new Uint8Array(img.width
 function otsu(g: Uint8Array, ignore: Uint8Array): number { const hist = new Uint32Array(256); let total = 0; for (let i = 0; i < g.length; i++) if (!ignore[i]) { hist[g[i]]++; total++; } if (!total) return 128; let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i]; let sumB = 0, wB = 0, best = 0, th = 128; for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = total - wB; if (!wF) break; sumB += t * hist[t]; const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best) { best = v; th = t; } } return th; }
 function binaryMask(img: ImageData, bg: Uint8Array, options: VectorOptions['binary']): Uint8Array {
   const { width, height } = img; const g = gray(img); const mask = new Uint8Array(g.length);
-  if (options.thresholdMode === 'sauvola') return sauvola(g, width, height, bg, options);
+  if (options.thresholdMode === 'sauvola') return sauvola(img, g, width, height, bg, options);
   const th = options.thresholdMode === 'otsu' ? otsu(g, bg) : options.threshold;
-  for (let p = 0; p < g.length; p++) if (!bg[p] && (options.invert ? g[p] >= th : g[p] <= th)) mask[p] = 1;
+  for (let p = 0; p < g.length; p++) if (passesBinaryPixel(img, p, bg[p], g[p], th, options)) mask[p] = 1;
   return mask;
 }
-function sauvola(g: Uint8Array, width: number, height: number, bg: Uint8Array, options: VectorOptions['binary']): Uint8Array {
+function passesInkChroma(img: ImageData, p: number, options: VectorOptions['binary']): boolean {
+  const maxChroma = options.maxChroma ?? 255;
+  if (maxChroma >= 255) return true;
+  const rgb = pixelRgb(img.data, p);
+  return Math.max(rgb.r, rgb.g, rgb.b) - Math.min(rgb.r, rgb.g, rgb.b) <= maxChroma;
+}
+function passesBinaryPixel(img: ImageData, p: number, isBg: number, grayValue: number, threshold: number, options: VectorOptions['binary']): boolean {
+  const matched = options.invert ? grayValue >= threshold : grayValue <= threshold;
+  if (!matched || !passesInkChroma(img, p, options)) return false;
+  if (!isBg) return true;
+  return !options.invert && grayValue <= Math.min(threshold, 118);
+}
+function sauvola(img: ImageData, g: Uint8Array, width: number, height: number, bg: Uint8Array, options: VectorOptions['binary']): Uint8Array {
   const mask = new Uint8Array(g.length); const w = Math.max(3, Math.floor(options.sauvolaWindow) | 1); const r = Math.floor(w / 2); const stride = width + 1; const sum = new Float64Array(stride * (height + 1)); const sq = new Float64Array(stride * (height + 1));
   for (let y = 0; y < height; y++) { let row = 0, rowSq = 0; for (let x = 0; x < width; x++) { const v = g[y * width + x]; row += v; rowSq += v * v; const i = (y + 1) * stride + x + 1; sum[i] = sum[i - stride] + row; sq[i] = sq[i - stride] + rowSq; } }
   const rect = (arr: Float64Array, x0: number, y0: number, x1: number, y1: number): number => arr[y1 * stride + x1] - arr[y0 * stride + x1] - arr[y1 * stride + x0] + arr[y0 * stride + x0];
-  for (let y = 0; y < height; y++) { const y0 = Math.max(0, y - r), y1 = Math.min(height, y + r + 1); for (let x = 0; x < width; x++) { const p = y * width + x; if (bg[p]) continue; const x0 = Math.max(0, x - r), x1 = Math.min(width, x + r + 1); const area = (x1 - x0) * (y1 - y0); const mean = rect(sum, x0, y0, x1, y1) / area; const variance = Math.max(0, rect(sq, x0, y0, x1, y1) / area - mean * mean); const th = mean * (1 + options.sauvolaK * (Math.sqrt(variance) / 128 - 1)); if (options.invert ? g[p] >= th : g[p] <= th) mask[p] = 1; } }
+  for (let y = 0; y < height; y++) { const y0 = Math.max(0, y - r), y1 = Math.min(height, y + r + 1); for (let x = 0; x < width; x++) { const p = y * width + x; const x0 = Math.max(0, x - r), x1 = Math.min(width, x + r + 1); const area = (x1 - x0) * (y1 - y0); const mean = rect(sum, x0, y0, x1, y1) / area; const variance = Math.max(0, rect(sq, x0, y0, x1, y1) / area - mean * mean); const th = mean * (1 + options.sauvolaK * (Math.sqrt(variance) / 128 - 1)); if (passesBinaryPixel(img, p, bg[p], g[p], th, options)) mask[p] = 1; } }
   return mask;
 }
 
@@ -269,7 +281,7 @@ export async function vectorizeImage(input: ImageData, options: VectorOptions, l
   await yieldToBrowser();
   if (!paths) warnings.push('No paths were generated. Lower background tolerance, threshold, or minimum area.');
   if (bg.pixels < total * 0.02 && options.background.enabled) warnings.push('Very little background was removed. Try higher tolerance or edge-connected mode.');
-  if (bg.pixels > total * 0.85) warnings.push('Most pixels were removed as background. Lower tolerance or minimum lightness.');
+  if (bg.pixels > total * 0.85 && options.mode !== 'binary') warnings.push('Most pixels were removed as background. Lower tolerance or minimum lightness.');
   const stats: VectorStats = { width, height, paths, contours, colors, backgroundPixels: bg.pixels, foregroundPixels: total - bg.pixels, elapsedMs: performance.now() - started, warnings };
   const outputSvg = svg(width, height, body, options, `Vectorized ${options.mode}: ${paths} paths, ${contours} contours`);
   log?.('Vectorization complete', stats);

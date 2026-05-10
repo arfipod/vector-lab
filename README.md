@@ -11,7 +11,9 @@ A React + TypeScript + Vite application for SVG editing and bitmap vectorization
 - Removes scanned paper/backgrounds with edge-connected masking.
 - Builds layered color + lineart SVGs for watercolor and ink artwork.
 - Provides separate color and lineart blur, trace, stroke, and underpaint controls.
+- Guards lineart extraction by chroma so dark saturated watercolor is not mistaken for ink.
 - Supports live vectorization preview with a debounce.
+- Includes a Node quality script that rasterizes SVG outputs and compares them against source scans.
 - Includes preview zoom, fit, 100%, reset, keyboard, wheel, and pan navigation.
 - Includes a persistent console, copyable logs/scripts, syntax-highlighted scripts, and progress feedback.
 - Exports SVG and PNG.
@@ -57,6 +59,8 @@ Use `color.trace.*` and `line.trace.*` independently:
 
 `color.lineartDarkness` controls which dark pixels are treated as lineart when building the layered masks. Raising it can catch more ink, but too much can turn shadows or saturated paint into black blobs. If the ink looks weak, prefer increasing `line.strokeWidth`; it thickens the rendered lineart without reclassifying more pixels as ink.
 
+`line.maxChroma` is an ink guard. Lower values keep neutral black/gray ink while rejecting saturated watercolor pixels, which is especially important in red and brown leaves or flowers. Use `255` to disable the guard.
+
 `color.underpaintStrokeWidth` adds a same-color stroke around color fills. Small values help neighboring color shapes overlap slightly, which can hide white gaps from traced seams. Keeping `color.excludeLineart = false` can also let color sit underneath ink instead of leaving cutouts.
 
 ### Contour Extraction
@@ -82,44 +86,74 @@ Built-in presets:
 
 - `watercolor-balanced`
 - `watercolor-maximum`
+- `watercolor-detail`
 - `svg-light`
 - `lineart-clean`
+- `lineart-detail`
 
-### Watercolor Pattern Recommended Script
+### Watercolor Pattern Maximum-Detail Script
 
 ```txt
-preset watercolor-maximum
+preset watercolor-detail
 
 set vector.mode = layered
-set vector.maxSide = 2050
-set vector.blur = 0.35
+set vector.maxSide = 2800
+set vector.blur = 0.25
 
 set bg.method = edge-connected
-set bg.tolerance = 15
-set bg.minLightness = 72
+set bg.tolerance = 14
+set bg.minLightness = 76
 
 set color.quantizer = oklab-kmeans
-set color.colors = 42
-set color.iterations = 32
-set color.samples = 220000
-set color.minClusterPixels = 4
+set color.colors = 64
+set color.iterations = 44
+set color.samples = 360000
+set color.minClusterPixels = 3
 set color.excludeLineart = false
-set color.lineartDarkness = 90
+set color.lineartDarkness = 145
 
-set color.blur = 0.72
-set line.blur = 0.22
+set color.blur = 0.55
+set line.blur = 0.12
+set line.maxChroma = 58
 
-set color.underpaintStrokeWidth = 0.85
-set line.strokeWidth = 1.25
+set color.underpaintStrokeWidth = 0.55
+set line.strokeWidth = 0.55
 
-set color.trace.minArea = 5
-set color.trace.simplify = 0.62
-set color.trace.smooth = 62
+set color.trace.minArea = 3
+set color.trace.simplify = 0.38
+set color.trace.smooth = 56
 set color.trace.precision = 2
 
 set line.trace.minArea = 3
-set line.trace.simplify = 0.38
-set line.trace.smooth = 28
+set line.trace.simplify = 0.24
+set line.trace.smooth = 18
+set line.trace.precision = 2
+
+set output.openInEditor = false
+run vectorize
+```
+
+### Line-Art Maximum-Detail Script
+
+```txt
+preset lineart-detail
+
+set vector.mode = binary
+set vector.maxSide = 2800
+
+set bg.method = edge-connected
+set bg.tolerance = 8
+set bg.minLightness = 84
+
+set line.mode = manual
+set line.threshold = 190
+set line.maxChroma = 80
+set line.blur = 0.05
+set line.strokeWidth = 0.25
+
+set line.trace.minArea = 4
+set line.trace.simplify = 0.24
+set line.trace.smooth = 12
 set line.trace.precision = 2
 
 set output.openInEditor = false
@@ -147,6 +181,7 @@ set color.underpaintStrokeWidth = 0
 set line.mode = manual
 set line.threshold = 148
 set line.blur = 0.3
+set line.maxChroma = 255
 set line.strokeWidth = 0
 set trace.simplify = 0.65
 set color.trace.simplify = 0.65
@@ -185,8 +220,8 @@ A fixed top progress bar appears during image loading, vectorization, live previ
 
 ## Troubleshooting Watercolor
 
-- Black blobs: lower `color.lineartDarkness`.
-- Weak ink: increase `line.strokeWidth` before raising `color.lineartDarkness`.
+- Black blobs: lower `color.lineartDarkness` or lower `line.maxChroma`.
+- Weak ink: increase `line.strokeWidth`, raise `color.lineartDarkness`, or raise `line.maxChroma` if colored washes are clipping ink.
 - White gaps: increase `color.underpaintStrokeWidth` and keep `color.excludeLineart = false`.
 - Jagged or straight color areas: lower `color.trace.simplify`, raise `color.trace.smooth`, or increase `color.blur`.
 - Lost fine ink detail: lower `line.blur` and lower `line.trace.simplify`.
@@ -210,6 +245,16 @@ npm run build
 ```
 
 The generated production output is in `dist/`.
+
+## Vectorization Quality Script
+
+Use the quality script to compare presets against local source scans. It writes SVGs, transparent PNGs, white-background preview PNGs, and `metrics.json`.
+
+```bash
+npm run quality -- --watercolor path/to/watercolor.png --lineart path/to/lineart.bmp --out .vector-quality
+```
+
+The script runs `watercolor-maximum`, `watercolor-detail`, `lineart-clean`, and `lineart-detail`, then reports retained foreground, background leak, color error, dark-line recall, and dark-line precision.
 
 ## Deploy To Vercel
 

@@ -9,7 +9,7 @@ export const defaultVectorOptions: VectorOptions = {
   livePreview: false,
   background: { enabled: true, method: 'edge-connected', tolerance: 10, minLightness: 72, sampleInset: 14, alphaThreshold: 8, showMask: false },
   color: { quantizer: 'oklab-kmeans', colors: 24, iterations: 20, sampleLimit: 140000, excludeLineart: true, lineartDarkness: 150, minClusterPixels: 8, blur: 0.3, trace: { ...defaultTraceOptions }, underpaintStrokeWidth: 0 },
-  binary: { thresholdMode: 'manual', threshold: 148, sauvolaWindow: 31, sauvolaK: 0.28, invert: false, fill: '#111111', blur: 0.3, trace: { ...defaultTraceOptions }, strokeWidth: 0 },
+  binary: { thresholdMode: 'manual', threshold: 148, sauvolaWindow: 31, sauvolaK: 0.28, invert: false, fill: '#111111', blur: 0.3, maxChroma: 255, trace: { ...defaultTraceOptions }, strokeWidth: 0 },
   trace: { ...defaultTraceOptions },
   output: { openInEditor: false, addBackground: false, backgroundColor: '#ffffff' }
 };
@@ -35,15 +35,22 @@ export const presets: Record<string, Partial<VectorOptions>> = {
     mode: 'layered', maxSide: 1500, blur: 0.3,
     background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 10, minLightness: 72 },
     color: { ...defaultVectorOptions.color, colors: 24, iterations: 20, sampleLimit: 140000, excludeLineart: true, blur: 0.3, trace: { ...defaultVectorOptions.trace, minArea: 5, simplify: 0.65, smooth: 6 } },
-    binary: { ...defaultVectorOptions.binary, blur: 0.3, trace: { ...defaultVectorOptions.trace, minArea: 5, simplify: 0.65, smooth: 6 } },
+    binary: { ...defaultVectorOptions.binary, blur: 0.3, maxChroma: 70, trace: { ...defaultVectorOptions.trace, minArea: 5, simplify: 0.65, smooth: 6 } },
     trace: { ...defaultVectorOptions.trace, minArea: 5, simplify: 0.65, smooth: 6 }
   },
   'watercolor-maximum': {
-    mode: 'layered', maxSide: 2050, blur: 0.35,
-    background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 15, minLightness: 72 },
-    color: { ...defaultVectorOptions.color, colors: 42, iterations: 32, sampleLimit: 220000, excludeLineart: false, lineartDarkness: 90, minClusterPixels: 4, blur: 0.65, trace: { ...defaultVectorOptions.trace, minArea: 5, simplify: 0.62, smooth: 62, precision: 2 }, underpaintStrokeWidth: 0.85 },
-    binary: { ...defaultVectorOptions.binary, blur: 0.22, trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.38, smooth: 28, precision: 2 }, strokeWidth: 1.25 },
+    mode: 'layered', maxSide: 2400, blur: 0.3,
+    background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 14, minLightness: 76, sampleInset: 22 },
+    color: { ...defaultVectorOptions.color, colors: 56, iterations: 38, sampleLimit: 280000, excludeLineart: false, lineartDarkness: 145, minClusterPixels: 3, blur: 0.55, trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.46, smooth: 54, precision: 2 }, underpaintStrokeWidth: 0.55 },
+    binary: { ...defaultVectorOptions.binary, blur: 0.12, maxChroma: 58, trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.28, smooth: 18, precision: 2 }, strokeWidth: 0.55 },
     trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.45, smooth: 5 }
+  },
+  'watercolor-detail': {
+    mode: 'layered', maxSide: 2800, blur: 0.25,
+    background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 14, minLightness: 76, sampleInset: 22 },
+    color: { ...defaultVectorOptions.color, colors: 64, iterations: 44, sampleLimit: 360000, excludeLineart: false, lineartDarkness: 145, minClusterPixels: 3, blur: 0.55, trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.38, smooth: 56, precision: 2 }, underpaintStrokeWidth: 0.55 },
+    binary: { ...defaultVectorOptions.binary, blur: 0.12, maxChroma: 58, trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.24, smooth: 18, precision: 2 }, strokeWidth: 0.55 },
+    trace: { ...defaultVectorOptions.trace, minArea: 2, simplify: 0.32, smooth: 18, precision: 2 }
   },
   'svg-light': {
     mode: 'color', maxSide: 1100, blur: 0.5,
@@ -52,8 +59,15 @@ export const presets: Record<string, Partial<VectorOptions>> = {
     trace: { ...defaultVectorOptions.trace, minArea: 14, simplify: 1.1, smooth: 10 }
   },
   'lineart-clean': {
-    mode: 'binary', maxSide: 1500, blur: 0.15,
-    binary: { ...defaultVectorOptions.binary, thresholdMode: 'manual', threshold: 145, fill: '#111111', blur: 0.15, trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.45, smooth: 4 } },
-    trace: { ...defaultVectorOptions.trace, minArea: 3, simplify: 0.45, smooth: 4 }
+    mode: 'binary', maxSide: 2200, blur: 0.08,
+    background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 8, minLightness: 84, sampleInset: 28 },
+    binary: { ...defaultVectorOptions.binary, thresholdMode: 'manual', threshold: 185, fill: '#111111', blur: 0.08, maxChroma: 80, trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.28, smooth: 12, precision: 2 }, strokeWidth: 0.2 },
+    trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.28, smooth: 12, precision: 2 }
+  },
+  'lineart-detail': {
+    mode: 'binary', maxSide: 2800, blur: 0.05,
+    background: { ...defaultVectorOptions.background, method: 'edge-connected', tolerance: 8, minLightness: 84, sampleInset: 28 },
+    binary: { ...defaultVectorOptions.binary, thresholdMode: 'manual', threshold: 190, fill: '#111111', blur: 0.05, maxChroma: 80, trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.24, smooth: 12, precision: 2 }, strokeWidth: 0.25 },
+    trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.24, smooth: 12, precision: 2 }
   }
 };

@@ -20,7 +20,7 @@ export interface VectorOptions {
   livePreview: boolean;
   background: { enabled: boolean; method: BackgroundMethod; tolerance: number; minLightness: number; sampleInset: number; alphaThreshold: number; showMask: boolean; };
   color: { quantizer: Quantizer; colors: number; iterations: number; sampleLimit: number; excludeLineart: boolean; lineartDarkness: number; minClusterPixels: number; blur: number; trace: TraceOptions; underpaintStrokeWidth: number; };
-  binary: { thresholdMode: ThresholdMode; threshold: number; sauvolaWindow: number; sauvolaK: number; invert: boolean; fill: string; blur: number; trace: TraceOptions; strokeWidth: number; };
+  binary: { thresholdMode: ThresholdMode; threshold: number; sauvolaWindow: number; sauvolaK: number; invert: boolean; fill: string; blur: number; maxChroma: number; trace: TraceOptions; strokeWidth: number; };
   trace: TraceOptions;
   output: { openInEditor: boolean; addBackground: boolean; backgroundColor: string; };
 }

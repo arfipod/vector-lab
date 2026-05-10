@@ -8,7 +8,7 @@ const aliases: Record<string, string> = {
   'color.colors': 'color.colors', 'color.quantizer': 'color.quantizer', 'color.iterations': 'color.iterations', 'color.samples': 'color.sampleLimit', 'color.minClusterPixels': 'color.minClusterPixels', 'color.excludeLineart': 'color.excludeLineart', 'color.lineartDarkness': 'color.lineartDarkness',
   'color.blur': 'color.blur', 'color.underpaintStrokeWidth': 'color.underpaintStrokeWidth',
   'color.trace.minArea': 'color.trace.minArea', 'color.trace.simplify': 'color.trace.simplify', 'color.trace.smooth': 'color.trace.smooth', 'color.trace.precision': 'color.trace.precision',
-  'line.threshold': 'binary.threshold', 'line.mode': 'binary.thresholdMode', 'line.fill': 'binary.fill', 'line.blur': 'binary.blur', 'line.strokeWidth': 'binary.strokeWidth',
+  'line.threshold': 'binary.threshold', 'line.mode': 'binary.thresholdMode', 'line.fill': 'binary.fill', 'line.blur': 'binary.blur', 'line.maxChroma': 'binary.maxChroma', 'line.strokeWidth': 'binary.strokeWidth',
   'line.trace.minArea': 'binary.trace.minArea', 'line.trace.simplify': 'binary.trace.simplify', 'line.trace.smooth': 'binary.trace.smooth', 'line.trace.precision': 'binary.trace.precision',
   'trace.minArea': 'trace.minArea', 'trace.simplify': 'trace.simplify', 'trace.smooth': 'trace.smooth', 'trace.precision': 'trace.precision',
   'output.openInEditor': 'output.openInEditor', 'output.background': 'output.addBackground'
@@ -53,44 +53,62 @@ set trace.simplify = 0.65
 set output.openInEditor = false
 run vectorize
 
-# Watercolor pattern recommended script
-preset watercolor-maximum
+# Watercolor pattern maximum-detail script
+preset watercolor-detail
 set vector.mode = layered
-set vector.maxSide = 2050
-set vector.blur = 0.35
+set vector.maxSide = 2800
+set vector.blur = 0.25
 
 set bg.method = edge-connected
-set bg.tolerance = 15
-set bg.minLightness = 72
+set bg.tolerance = 14
+set bg.minLightness = 76
 
 set color.quantizer = oklab-kmeans
-set color.colors = 42
-set color.iterations = 32
-set color.samples = 220000
-set color.minClusterPixels = 4
+set color.colors = 64
+set color.iterations = 44
+set color.samples = 360000
+set color.minClusterPixels = 3
 set color.excludeLineart = false
-set color.lineartDarkness = 90
+set color.lineartDarkness = 145
 
-set color.blur = 0.72
-set line.blur = 0.22
+set color.blur = 0.55
+set line.blur = 0.12
+set line.maxChroma = 58
 
-set color.underpaintStrokeWidth = 0.85
-set line.strokeWidth = 1.25
+set color.underpaintStrokeWidth = 0.55
+set line.strokeWidth = 0.55
 
-set color.trace.minArea = 5
-set color.trace.simplify = 0.62
-set color.trace.smooth = 62
+set color.trace.minArea = 3
+set color.trace.simplify = 0.38
+set color.trace.smooth = 56
 set color.trace.precision = 2
 
 set line.trace.minArea = 3
-set line.trace.simplify = 0.38
-set line.trace.smooth = 28
+set line.trace.simplify = 0.24
+set line.trace.smooth = 18
 set line.trace.precision = 2
 
 set output.openInEditor = false
 run vectorize
 
-# Presets: watercolor-balanced, watercolor-maximum, svg-light, lineart-clean
+# Line-art maximum-detail script
+preset lineart-detail
+set vector.mode = binary
+set vector.maxSide = 2800
+set bg.tolerance = 8
+set bg.minLightness = 84
+set line.threshold = 190
+set line.maxChroma = 80
+set line.blur = 0.05
+set line.strokeWidth = 0.25
+set line.trace.minArea = 4
+set line.trace.simplify = 0.24
+set line.trace.smooth = 12
+set line.trace.precision = 2
+set output.openInEditor = false
+run vectorize
+
+# Presets: watercolor-balanced, watercolor-maximum, watercolor-detail, svg-light, lineart-clean, lineart-detail
 # Editor example: set editor.hue = 20`;
 export function runScript(source: string, options: VectorOptions, editor: EditorSettings): ScriptOutput {
   let next = clone(options); const nextEditor = clone(editor); const actions: ScriptOutput['actions'] = []; const messages: string[] = [];
