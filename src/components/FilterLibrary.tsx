@@ -3,6 +3,7 @@ import type { LogLevel, VectorOptions } from '../types';
 import { defaultVectorOptions, presetMetadata, presets } from '../defaults';
 import { downloadText } from '../lib/download';
 import { cloneOptions, isVectorOptions, mergeVectorOptions } from '../lib/options';
+import { HelpLabel, SectionHeading } from './Help';
 
 interface FilterLibraryProps {
   options: VectorOptions;
@@ -263,15 +264,17 @@ export function FilterLibrary({ options, appliedFilterId, appliedFilterModified,
   };
 
   return <section className="section filter-library">
-    <h2>2. Filter Library <span>{visibleItems.length}/{items.length}</span></h2>
+    <SectionHeading title="2. Filter Library" optionId="filters.search" meta={`${visibleItems.length}/${items.length}`} />
     <div className="filter-tools">
       <label className="sr-only" htmlFor="filter-search">Search filters</label>
+      <div className="filter-help-row"><HelpLabel optionId="filters.search">Search</HelpLabel><HelpLabel optionId="filters.category">Categories</HelpLabel><HelpLabel optionId="filters.apply">Apply</HelpLabel></div>
       <input id="filter-search" type="search" value={query} placeholder="Search filters" onChange={(event) => setQuery(event.target.value)} />
       <div className="filter-chip-row" aria-label="Filter categories">
         {categories.map((item) => <button key={item} type="button" className={`filter-chip ${category === item ? 'active' : ''}`} onClick={() => setCategory(item)}>{item}</button>)}
       </div>
     </div>
 
+    <div className="filter-help-row"><HelpLabel optionId="filters.saveCurrent">Save</HelpLabel><HelpLabel optionId="filters.exportCustom">Export</HelpLabel><HelpLabel optionId="filters.importJson">Import</HelpLabel><HelpLabel optionId="filters.rename">Rename</HelpLabel><HelpLabel optionId="filters.delete">Delete</HelpLabel></div>
     <div className="filter-actions">
       <button type="button" onClick={() => setSaving((value) => !value)}>Save current settings as filter</button>
       <button type="button" disabled={!customFilters.length} onClick={() => exportFilters(customFilters)}>Export custom filters</button>

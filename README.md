@@ -35,6 +35,16 @@ Applying a filter updates the vectorization controls, and the controls remain ed
 
 Custom filters can be saved from the current vectorization settings with **Save current settings as filter**. They are stored in browser `localStorage` under `vector-lab.custom-filters.v1`, so they stay on the same browser/profile and are not committed to the project. Custom filters can be applied, renamed, deleted, exported as JSON, and imported from JSON. Imported filters are validated before they are saved.
 
+## Option Reference
+
+The app includes a searchable **Help** guide in the header. It explains every Editing and Vectorization option with plain-English behavior, technical effect, default value, valid range, recommendations, and tradeoffs.
+
+The full written reference lives in [docs/options.md](docs/options.md). It covers:
+
+- Editing load behavior, stroke controls, HSL/HSV color controls, protection toggles, palette enable/replace controls, and SVG/PNG export.
+- Vectorization Filter Library controls, mode, sizing, live preview, paper removal, quantization, lineart thresholding, contour tracing, advanced layer controls, background output, and export actions.
+- Best settings for watercolor with ink, clean black lineart, lightweight SVG, preserving detail, removing paper background, avoiding white gaps, and avoiding black blobs.
+
 ## Vectorization Algorithms
 
 The vectorization engine is implemented in `src/lib/vectorize.ts` and is designed for scanned illustrations, watercolor artwork, line drawings, and mixed lineart + color artwork.
