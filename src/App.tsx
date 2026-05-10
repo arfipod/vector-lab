@@ -4,6 +4,7 @@ import { defaultEditorSettings, defaultVectorOptions } from './defaults';
 import { DropZone } from './components/DropZone';
 import { SliderField } from './components/SliderField';
 import { ConsolePanel } from './components/ConsolePanel';
+import { PreviewStage } from './components/PreviewStage';
 import { loadSourceImage, rasterSvgWrapper } from './lib/imageLoader';
 import { vectorizeImage } from './lib/vectorize';
 import { applySvgEdit, extractPalette } from './lib/svgEdit';
@@ -12,7 +13,6 @@ import { runScript } from './lib/scripting';
 
 const uuid = (): string => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 const safeName = (name: string, ext: string): string => `${name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-') || 'vector-lab'}.${ext}`;
-function dataUrl(svg: string): string { return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('vectorization');
@@ -99,6 +99,9 @@ export default function App() {
 
   const previewSvg = tab === 'editing' ? editedSvg : result?.svg;
   const previewImage = tab === 'vectorization' && !result ? source?.previewUrl : undefined;
+  const previewSize = useMemo(() => tab === 'vectorization'
+    ? result ? { width: result.stats.width, height: result.stats.height } : source ? { width: source.width, height: source.height } : null
+    : null, [result, source, tab]);
 
   return <div className="app-shell">
     <header className={`app-header ${headerHidden ? 'hidden' : ''}`}><div className="brand"><div className="brand-mark">VL</div><div><h1>Vector Lab Studio</h1><p>SVG editing and bitmap vectorization</p></div></div><nav className="tabs"><button className={tab === 'editing' ? 'active' : ''} onClick={() => setTab('editing')}>Editing</button><button className={tab === 'vectorization' ? 'active' : ''} onClick={() => setTab('vectorization')}>Vectorization</button></nav></header>
@@ -121,7 +124,7 @@ export default function App() {
         </>}
         {tab === 'editing' ? <section className="section sticky-actions"><button className="primary" disabled={!editedSvg} onClick={exportSvg}>Export SVG</button><button disabled={!editedSvg} onClick={exportPng}>Export PNG</button></section> : null}
       </aside>
-      <section className="preview-panel"><div className="preview-toolbar"><div><strong>{tab === 'editing' ? 'Editing preview' : 'Vectorization preview'}</strong><small>{tab === 'editing' ? `${palette.length} colors detected` : result ? `${result.stats.paths} paths · ${result.stats.contours} contours` : source ? `${source.width} × ${source.height}px source` : 'No image loaded'}</small></div></div><div className="stage-wrap">{previewSvg ? <img src={dataUrl(previewSvg)} alt="SVG preview" /> : previewImage ? <img src={previewImage} alt="Source preview" /> : <div className="empty-state"><h2>Vector workspace</h2><p>Load a bitmap for vectorization or an SVG for editing.</p></div>}</div></section>
+      <PreviewStage title={tab === 'editing' ? 'Editing preview' : 'Vectorization preview'} subtitle={tab === 'editing' ? `${palette.length} colors detected` : result ? `${result.stats.paths} paths · ${result.stats.contours} contours` : source ? `${source.width} × ${source.height}px source` : 'No image loaded'} svg={previewSvg} imageUrl={previewImage} imageAlt={previewSvg ? 'SVG preview' : 'Source preview'} intrinsicSize={previewSize} />
     </main>
     <footer className="footer">Made with 💙 by arrf</footer>
     <ConsolePanel logs={logs} onClear={() => setLogs([{ id: uuid(), level: 'info', message: 'Console cleared.', time: Date.now() }])} onRunScript={runVectorScript} />
