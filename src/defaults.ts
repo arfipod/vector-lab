@@ -1,5 +1,13 @@
 import type { EditorSettings, TraceOptions, VectorOptions } from './types';
 
+export interface PresetMetadata {
+  name: string;
+  description: string;
+  categories: string[];
+  tags: string[];
+  recommendedUse: string;
+}
+
 export const defaultTraceOptions: TraceOptions = { minArea: 5, simplify: 0.65, smooth: 6, precision: 2 };
 
 export const defaultVectorOptions: VectorOptions = {
@@ -71,3 +79,48 @@ export const presets: Record<string, Partial<VectorOptions>> = {
     trace: { ...defaultVectorOptions.trace, minArea: 4, simplify: 0.24, smooth: 12, precision: 2 }
   }
 };
+
+export const presetMetadata = {
+  'watercolor-balanced': {
+    name: 'Watercolor Balanced',
+    description: 'Layered watercolor and ink settings with moderate color counts and stable paper removal.',
+    categories: ['Watercolor', 'Balanced'],
+    tags: ['watercolor', 'layered', 'balanced', 'ink'],
+    recommendedUse: 'Scanned watercolor illustrations that need clean color shapes without very large SVG output.'
+  },
+  'watercolor-maximum': {
+    name: 'Watercolor Maximum',
+    description: 'A richer layered pass with more colors, finer clusters, and stronger layer overlap.',
+    categories: ['Watercolor', 'Maximum detail'],
+    tags: ['watercolor', 'layered', 'maximum detail', 'rich color'],
+    recommendedUse: 'Complex watercolor pieces where preserving wash variation matters more than file size.'
+  },
+  'watercolor-detail': {
+    name: 'Watercolor Detail',
+    description: 'Highest-detail watercolor preset with large source sizing and low simplification.',
+    categories: ['Watercolor', 'Maximum detail'],
+    tags: ['watercolor', 'detail', 'layered', 'large scan'],
+    recommendedUse: 'High-resolution artwork, patterns, botanical scans, and other detailed watercolor sources.'
+  },
+  'svg-light': {
+    name: 'SVG Light',
+    description: 'Compact color-only tracing with fewer colors and more simplification.',
+    categories: ['Lightweight SVG'],
+    tags: ['lightweight', 'small file', 'color', 'simplified'],
+    recommendedUse: 'Fast previews, web graphics, icons, or any image where small SVG output is the priority.'
+  },
+  'lineart-clean': {
+    name: 'Lineart Clean',
+    description: 'Binary ink tracing tuned for crisp black lines and light paper cleanup.',
+    categories: ['Lineart', 'Balanced'],
+    tags: ['lineart', 'binary', 'clean', 'ink'],
+    recommendedUse: 'Clean sketches, ink drawings, lettering, and scans where smooth readable outlines matter.'
+  },
+  'lineart-detail': {
+    name: 'Lineart Detail',
+    description: 'Fine binary lineart tracing with higher source sizing and lower simplification.',
+    categories: ['Lineart', 'Maximum detail'],
+    tags: ['lineart', 'binary', 'detail', 'ink'],
+    recommendedUse: 'Detailed ink drawings, hatching, small lettering, and scans with delicate contours.'
+  }
+} satisfies Record<keyof typeof presets, PresetMetadata>;

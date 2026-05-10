@@ -18,6 +18,23 @@ A React + TypeScript + Vite application for SVG editing and bitmap vectorization
 - Includes a persistent console, copyable logs/scripts, syntax-highlighted scripts, and progress feedback.
 - Exports SVG and PNG.
 
+## Filter Library
+
+The Vectorization sidebar includes a Filter Library for browsing and applying the built-in vectorization presets without opening the script console. Filters can be searched by name, tag, mode, or description, and category chips narrow the list to groups such as Watercolor, Lineart, Lightweight SVG, Balanced, and Maximum detail.
+
+Built-in filters:
+
+- Watercolor Balanced (`watercolor-balanced`): moderate layered color + lineart settings for scanned watercolor.
+- Watercolor Maximum (`watercolor-maximum`): richer layered watercolor output with more colors and detail.
+- Watercolor Detail (`watercolor-detail`): highest-detail watercolor tracing for large scans and pattern work.
+- SVG Light (`svg-light`): compact color-only output when smaller SVG files matter.
+- Lineart Clean (`lineart-clean`): crisp binary ink tracing for clean sketches and lettering.
+- Lineart Detail (`lineart-detail`): fine binary tracing for delicate ink contours and hatching.
+
+Applying a filter updates the vectorization controls, and the controls remain editable afterward. If you adjust a setting after applying a filter, the library marks that filter as modified instead of treating it as an exact match.
+
+Custom filters can be saved from the current vectorization settings with **Save current settings as filter**. They are stored in browser `localStorage` under `vector-lab.custom-filters.v1`, so they stay on the same browser/profile and are not committed to the project. Custom filters can be applied, renamed, deleted, exported as JSON, and imported from JSON. Imported filters are validated before they are saved.
+
 ## Vectorization Algorithms
 
 The vectorization engine is implemented in `src/lib/vectorize.ts` and is designed for scanned illustrations, watercolor artwork, line drawings, and mixed lineart + color artwork.
@@ -90,6 +107,8 @@ Built-in presets:
 - `svg-light`
 - `lineart-clean`
 - `lineart-detail`
+
+Scripts use the built-in preset names above. Custom filters are managed by the Filter Library UI and browser `localStorage`.
 
 ### Watercolor Pattern Maximum-Detail Script
 
