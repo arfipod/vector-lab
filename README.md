@@ -202,8 +202,10 @@ run export-png
 - Use `100%` to view at actual SVG/image pixel size.
 - Use `Reset` to return to fit zoom and recenter the preview.
 - Focus the preview viewport, then use `+`/`=` and `-` for zoom, `0` for fit, `1` for 100%, and arrow keys to pan.
-- Use Ctrl+wheel or Cmd+wheel to zoom around the pointer. Normal wheel or trackpad scrolling pans the viewport.
-- Hold Space while the preview is hovered or focused, then drag with the primary pointer button to pan.
+- Drag with the primary mouse button to pan. Space+drag also works.
+- Wheel over the preview to zoom around the pointer; horizontal trackpad gestures pan across the viewport.
+- On touch screens, use one finger to pan and two fingers to pinch zoom around the midpoint.
+- Preview gestures are contained inside the viewport so the page does not scroll unexpectedly while you navigate the image.
 
 ## Console And Scripts
 

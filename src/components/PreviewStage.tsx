@@ -6,6 +6,15 @@ interface PreviewSize {
   height: number;
 }
 
+interface Point {
+  clientX: number;
+  clientY: number;
+}
+
+interface ActivePointer extends Point {
+  pointerType: string;
+}
+
 interface PreviewStageProps {
   title: string;
   subtitle: string;
@@ -19,6 +28,9 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
 const ZOOM_STEP = 1.2;
 const PAN_STEP = 72;
+const WHEEL_ZOOM_INTENSITY = 0.0025;
+const LINE_WHEEL_PIXELS = 16;
+const PAGE_WHEEL_PIXELS = 600;
 const FALLBACK_SIZE: PreviewSize = { width: 900, height: 640 };
 
 const clamp = (value: number, min = MIN_ZOOM, max = MAX_ZOOM): number => Math.min(max, Math.max(min, value));
@@ -27,6 +39,18 @@ const safeSize = (size: PreviewSize | null | undefined): PreviewSize => {
   if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) return FALLBACK_SIZE;
   return size;
 };
+
+const wheelPixels = (event: globalThis.WheelEvent): { x: number; y: number } => {
+  const multiplier = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_WHEEL_PIXELS : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? PAGE_WHEEL_PIXELS : 1;
+  return { x: event.deltaX * multiplier, y: event.deltaY * multiplier };
+};
+
+const distance = (a: Point, b: Point): number => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+const midpoint = (a: Point, b: Point): Point => ({
+  clientX: (a.clientX + b.clientX) / 2,
+  clientY: (a.clientY + b.clientY) / 2,
+});
 
 function parseSvgSize(svg: string | undefined): PreviewSize | null {
   if (!svg) return null;
@@ -57,9 +81,12 @@ function viewportPadding(element: HTMLElement): { x: number; y: number } {
 export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Preview', intrinsicSize }: PreviewStageProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const dragRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const activePointersRef = useRef<Map<number, ActivePointer>>(new Map());
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const fitModeRef = useRef(true);
   const hoveredRef = useRef(false);
+  const zoomRef = useRef(1);
 
   const parsedSvgSize = useMemo(() => parseSvgSize(svg), [svg]);
   const hasPreview = Boolean(svg || imageUrl);
@@ -71,9 +98,15 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
   const contentKey = svg ? `svg:${baseSize.width}x${baseSize.height}` : imageUrl ?? 'empty';
 
   const [size, setSize] = useState<PreviewSize>(baseSize);
+  const [viewportSize, setViewportSize] = useState<PreviewSize | null>(null);
   const [zoom, setZoom] = useState(1);
   const [spacePressed, setSpacePressed] = useState(false);
   const [dragging, setDragging] = useState(false);
+
+  const setZoomValue = useCallback((nextZoom: number): void => {
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+  }, []);
 
   const calculateFitZoom = useCallback((nextSize: PreviewSize): number => {
     const viewport = viewportRef.current;
@@ -82,6 +115,20 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
     const availableWidth = Math.max(1, viewport.clientWidth - padding.x);
     const availableHeight = Math.max(1, viewport.clientHeight - padding.y);
     return clamp(Math.min(availableWidth / nextSize.width, availableHeight / nextSize.height));
+  }, []);
+
+  const updateViewportSize = useCallback((): void => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const padding = viewportPadding(viewport);
+    const nextSize = {
+      width: Math.max(1, viewport.clientWidth - padding.x),
+      height: Math.max(1, viewport.clientHeight - padding.y),
+    };
+    setViewportSize((previousSize) => {
+      if (previousSize?.width === nextSize.width && previousSize.height === nextSize.height) return previousSize;
+      return nextSize;
+    });
   }, []);
 
   const centerPreview = useCallback((): void => {
@@ -96,20 +143,20 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
   const fitPreview = useCallback((nextSize = size): void => {
     if (!hasPreview) return;
     fitModeRef.current = true;
-    setZoom(calculateFitZoom(nextSize));
+    setZoomValue(calculateFitZoom(nextSize));
     centerPreview();
-  }, [calculateFitZoom, centerPreview, hasPreview, size]);
+  }, [calculateFitZoom, centerPreview, hasPreview, setZoomValue, size]);
 
-  const zoomTo = useCallback((nextZoom: number, anchor?: { clientX: number; clientY: number }): void => {
+  const zoomTo = useCallback((nextZoom: number, anchor?: Point): void => {
     if (!hasPreview) return;
     const viewport = viewportRef.current;
     const content = contentRef.current;
-    const oldZoom = zoom;
+    const oldZoom = zoomRef.current;
     const clampedZoom = clamp(nextZoom);
 
     fitModeRef.current = false;
     if (!viewport || !content || !anchor) {
-      setZoom(clampedZoom);
+      setZoomValue(clampedZoom);
       return;
     }
 
@@ -117,7 +164,7 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
     const localX = (anchor.clientX - beforeRect.left) / oldZoom;
     const localY = (anchor.clientY - beforeRect.top) / oldZoom;
 
-    setZoom(clampedZoom);
+    setZoomValue(clampedZoom);
     window.requestAnimationFrame(() => {
       const afterContent = contentRef.current;
       const afterViewport = viewportRef.current;
@@ -126,7 +173,7 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
       afterViewport.scrollLeft += afterRect.left + localX * clampedZoom - anchor.clientX;
       afterViewport.scrollTop += afterRect.top + localY * clampedZoom - anchor.clientY;
     });
-  }, [hasPreview, zoom]);
+  }, [hasPreview, setZoomValue]);
 
   const zoomAroundCenter = useCallback((nextZoom: number): void => {
     const viewport = viewportRef.current;
@@ -152,20 +199,22 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
     fitModeRef.current = true;
     window.requestAnimationFrame(() => {
       if (!hasPreview) return;
-      setZoom(calculateFitZoom(nextSize));
+      setZoomValue(calculateFitZoom(nextSize));
       centerPreview();
     });
-  }, [baseSize, calculateFitZoom, centerPreview, contentKey, hasPreview]);
+  }, [baseSize, calculateFitZoom, centerPreview, contentKey, hasPreview, setZoomValue]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || !hasPreview) return;
     const observer = new ResizeObserver(() => {
+      updateViewportSize();
       if (fitModeRef.current) fitPreview(size);
     });
+    updateViewportSize();
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [fitPreview, hasPreview, size]);
+  }, [fitPreview, hasPreview, size, updateViewportSize]);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
@@ -188,14 +237,21 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
     const viewport = viewportRef.current;
     if (!viewport || !hasPreview) return;
     const onWheel = (event: globalThis.WheelEvent): void => {
-      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      const direction = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-      zoomTo(zoom * direction, { clientX: event.clientX, clientY: event.clientY });
+      const delta = wheelPixels(event);
+      if (Math.abs(delta.x) > Math.abs(delta.y) * 1.35 && !event.ctrlKey && !event.metaKey) {
+        fitModeRef.current = false;
+        viewport.scrollLeft += delta.x;
+        viewport.scrollTop += delta.y;
+        return;
+      }
+      const zoomDelta = event.ctrlKey || event.metaKey ? delta.y : delta.y + delta.x * 0.25;
+      const factor = Math.exp(-zoomDelta * WHEEL_ZOOM_INTENSITY);
+      zoomTo(zoomRef.current * factor, { clientX: event.clientX, clientY: event.clientY });
     };
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
-  }, [hasPreview, zoom, zoomTo]);
+  }, [hasPreview, zoomTo]);
 
   const onImageLoad = (event: SyntheticEvent<HTMLImageElement>): void => {
     if (intrinsicSize || parsedSvgSize) return;
@@ -249,19 +305,48 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-    if (!hasPreview || !spacePressed || event.button !== 0) return;
+    if (!hasPreview) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     event.preventDefault();
+    viewport.focus({ preventScroll: true });
     viewport.setPointerCapture(event.pointerId);
-    dragRef.current = { x: event.clientX, y: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
+    activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType });
+
+    const touchPointers = Array.from(activePointersRef.current.values()).filter((pointer) => pointer.pointerType === 'touch');
+    if (touchPointers.length >= 2) {
+      const [first, second] = touchPointers;
+      pinchRef.current = { distance: Math.max(1, distance(first, second)), zoom: zoomRef.current };
+      dragRef.current = null;
+      setDragging(false);
+      return;
+    }
+
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
     setDragging(true);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!hasPreview) return;
+    if (activePointersRef.current.has(event.pointerId)) {
+      activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType });
+    }
+
+    const touchPointers = Array.from(activePointersRef.current.values()).filter((pointer) => pointer.pointerType === 'touch');
+    if (touchPointers.length >= 2) {
+      const pinch = pinchRef.current;
+      if (!pinch) return;
+      event.preventDefault();
+      const [first, second] = touchPointers;
+      const nextDistance = Math.max(1, distance(first, second));
+      zoomTo(pinch.zoom * (nextDistance / pinch.distance), midpoint(first, second));
+      return;
+    }
+
     const drag = dragRef.current;
     const viewport = viewportRef.current;
-    if (!drag || !viewport) return;
+    if (!drag || !viewport || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.x);
     viewport.scrollTop = drag.scrollTop - (event.clientY - drag.y);
@@ -270,12 +355,27 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
   const endDrag = (event: PointerEvent<HTMLDivElement>): void => {
     const viewport = viewportRef.current;
     if (viewport?.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
-    dragRef.current = null;
-    setDragging(false);
+    activePointersRef.current.delete(event.pointerId);
+    pinchRef.current = null;
+
+    const remainingTouches = Array.from(activePointersRef.current.entries()).filter(([, pointer]) => pointer.pointerType === 'touch');
+    if (remainingTouches.length === 1 && viewport) {
+      const [pointerId, pointer] = remainingTouches[0];
+      dragRef.current = { pointerId, x: pointer.clientX, y: pointer.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
+      setDragging(true);
+      return;
+    }
+
+    if (!dragRef.current || dragRef.current.pointerId === event.pointerId) {
+      dragRef.current = null;
+      setDragging(false);
+    }
   };
 
   const width = Math.max(1, Math.round(size.width * zoom));
   const height = Math.max(1, Math.round(size.height * zoom));
+  const inlineMargin = viewportSize ? Math.max(0, (viewportSize.width - width) / 2) : undefined;
+  const blockMargin = viewportSize ? Math.max(0, (viewportSize.height - height) / 2) : undefined;
   const zoomPercent = `${Math.round(zoom * 100)}%`;
 
   return <section className="preview-panel">
@@ -295,10 +395,12 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
     </div>
     <div
       ref={viewportRef}
-      className={`stage-wrap ${!hasPreview ? 'empty' : dragging ? 'dragging' : spacePressed ? 'space-pan' : ''}`}
+      className={`stage-wrap ${!hasPreview ? 'empty' : dragging ? 'dragging' : spacePressed ? 'space-pan' : 'pannable'}`}
       tabIndex={0}
       role="region"
       aria-label="Preview viewport"
+      aria-describedby="preview-navigation-help"
+      title="Drag to pan. Wheel to zoom around the pointer. Touch: one finger pans, two fingers pinch. Keyboard: +/- zoom, 0 fit, 1 actual size, arrows pan."
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
       onPointerDown={onPointerDown}
@@ -309,7 +411,8 @@ export function PreviewStage({ title, subtitle, svg, imageUrl, imageAlt = 'Previ
       onPointerLeave={() => { hoveredRef.current = false; if (!dragRef.current) setSpacePressed(false); }}
       onBlur={() => setSpacePressed(false)}
     >
-      {previewSrc ? <div ref={contentRef} className="stage-content" style={{ width, height }}>
+      <span id="preview-navigation-help" className="sr-only">Drag to pan. Wheel zooms around the pointer. On touch screens, one finger pans and two fingers pinch zoom. Keyboard shortcuts are plus or minus to zoom, 0 to fit, 1 for actual size, and arrow keys to pan.</span>
+      {previewSrc ? <div ref={contentRef} className="stage-content" style={{ width, height, margin: `${blockMargin ?? 0}px ${inlineMargin ?? 0}px` }}>
         <img src={previewSrc} alt={imageAlt} onLoad={onImageLoad} draggable={false} />
       </div> : <div className="empty-state"><h2>Vector workspace</h2><p>Load a bitmap for vectorization or an SVG for editing.</p></div>}
     </div>

@@ -34,6 +34,7 @@ select { width: 100%; padding: 0.65rem 0.7rem; }
 input[type="color"] { width: 3.25rem; height: 2.45rem; padding: 0.2rem; }
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .app-shell { min-height: 100vh; padding-bottom: 430px; }
 .progress-overlay { position: fixed; inset: 0 0 auto; z-index: 60; display: grid; gap: 0.45rem; pointer-events: none; }
@@ -94,11 +95,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monos
 .preview-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.4rem; }
 .preview-controls button { min-width: 2.45rem; padding: 0.45rem 0.6rem; border-radius: 10px; }
 .zoom-readout { min-width: 4rem; padding: 0.35rem 0.55rem; border: 1px solid var(--border); border-radius: 10px; background: #0d1424; color: #f7fbff; font-variant-numeric: tabular-nums; text-align: center; }
-.stage-wrap { min-height: calc(100vh - 12.8rem); display: block; overflow: auto; padding: 1rem; position: relative; overscroll-behavior: contain; outline: none; background-color: #f8fafc; background-image: linear-gradient(45deg, #e8edf5 25%, transparent 25%), linear-gradient(-45deg, #e8edf5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e8edf5 75%), linear-gradient(-45deg, transparent 75%, #e8edf5 75%); background-size: 28px 28px; background-position: 0 0, 0 14px, 14px -14px, -14px 0; }
+.stage-wrap { min-height: calc(100vh - 12.8rem); display: block; overflow: auto; padding: 1rem; position: relative; overscroll-behavior: contain; touch-action: pan-x pan-y; outline: none; background-color: #f8fafc; background-image: linear-gradient(45deg, #e8edf5 25%, transparent 25%), linear-gradient(-45deg, #e8edf5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e8edf5 75%), linear-gradient(-45deg, transparent 75%, #e8edf5 75%); background-size: 28px 28px; background-position: 0 0, 0 14px, 14px -14px, -14px 0; }
 .stage-wrap.empty { display: grid; place-items: center; }
 .stage-wrap:focus-visible { box-shadow: inset 0 0 0 3px rgba(61, 124, 255, 0.5); }
-.stage-wrap.space-pan { cursor: grab; }
-.stage-wrap.dragging { cursor: grabbing; user-select: none; }
+.stage-wrap.pannable, .stage-wrap.space-pan { cursor: grab; touch-action: none; }
+.stage-wrap.dragging { cursor: grabbing; user-select: none; touch-action: none; }
 .stage-content { flex: 0 0 auto; display: block; margin: auto; }
 .stage-content img { display: block; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; pointer-events: none; user-select: none; filter: drop-shadow(0 18px 42px rgba(15,23,42,0.25)); }
 .empty-state { max-width: 32rem; padding: 2rem; border-radius: 22px; color: #172033; background: rgba(255,255,255,0.74); text-align: center; }
