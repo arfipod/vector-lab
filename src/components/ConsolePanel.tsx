@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LogEntry } from '../types';
-import { scriptHelp } from '../lib/scripting';
+import { scriptHelp, scriptingGuideUrl } from '../lib/scripting';
 import { ScriptEditor } from './ScriptEditor';
 interface Props { logs: LogEntry[]; onClear: () => void; onRunScript: (script: string) => void; }
 export function ConsolePanel({ logs, onClear, onRunScript }: Props) {
@@ -54,7 +54,7 @@ export function ConsolePanel({ logs, onClear, onRunScript }: Props) {
     {open ? <div className="console-grid">
       <div className="log-stream" ref={logStreamRef} aria-label="Console log stream">{logs.map((l) => <div key={l.id} className={`log-line ${l.level}`}><span>{new Date(l.time).toLocaleTimeString()}</span><strong>{l.level}</strong><p>{l.message}</p></div>)}</div>
       <div className="script-box">
-        <div className="script-header"><strong>Script</strong><div className="script-actions"><button type="button" onClick={() => void copyText(script, 'script')}>{copyState === 'script' ? 'Copied script' : 'Copy script'}</button><button className="primary" type="button" onClick={() => onRunScript(script)}>Run script</button></div></div>
+        <div className="script-header"><strong>Script</strong><div className="script-actions"><a className="script-guide-link" href={scriptingGuideUrl} target="_blank" rel="noreferrer">Scripting guide</a><button type="button" onClick={() => void copyText(script, 'script')}>{copyState === 'script' ? 'Copied script' : 'Copy script'}</button><button className="primary" type="button" onClick={() => onRunScript(script)}>Run script</button></div></div>
         <ScriptEditor ariaLabel="Vector Lab script editor" value={script} onChange={setScript} />
       </div>
       {copyState === 'failed' ? <p className="console-feedback" role="status">Copy failed. Clipboard access is unavailable in this browser.</p> : null}

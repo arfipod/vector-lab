@@ -29,6 +29,8 @@ button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.48; cursor: not-allowed; }
 button.primary { background: linear-gradient(135deg, #2f6df1, #4c8dff); border-color: rgba(122, 183, 255, 0.78); color: #fff; }
 button.primary:hover:not(:disabled) { background: linear-gradient(135deg, #3d7cff, #67a6ff); }
+.script-guide-link { display: inline-flex; align-items: center; justify-content: center; min-height: 2.05rem; padding: 0.48rem 0.78rem; border: 1px solid rgba(122, 183, 255, 0.36); border-radius: 12px; color: var(--text); background: #121c2e; text-decoration: none; font-size: 0.88rem; }
+.script-guide-link:hover, .script-guide-link:focus-visible { background: #1d2d48; border-color: rgba(122, 183, 255, 0.55); outline: none; }
 select, input[type="number"], input[type="text"], input[type="search"], input[type="color"], textarea { border: 1px solid var(--border); border-radius: 12px; background: #0d1424; color: var(--text); }
 select { width: 100%; padding: 0.65rem 0.7rem; }
 input[type="text"], input[type="search"], textarea { width: 100%; padding: 0.65rem 0.7rem; }

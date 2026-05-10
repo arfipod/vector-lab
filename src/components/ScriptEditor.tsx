@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { ChangeEvent, UIEvent } from 'react';
-import { scriptActions, scriptOptionPaths, scriptPresetNames } from '../lib/scripting';
+import { scriptActions, scriptOptionPaths, scriptPresetNames, splitScriptLineComment } from '../lib/scripting';
 
 interface Props {
   value: string;
@@ -17,24 +17,24 @@ const commandWords = new Set<string>(['preset', 'set', 'run']);
 const booleanWords = new Set<string>(['true', 'false', 'yes', 'no', 'on', 'off']);
 const actionWords = new Set<string>(scriptActions);
 const presetWords = new Set<string>(scriptPresetNames);
-const pathWords = new Set(scriptOptionPaths);
+const pathWords = new Set(scriptOptionPaths.map((path) => path.toLowerCase()));
 const editorPathPattern = /^editor\.[\w.-]+$/i;
-const tokenPattern = /(["'](?:\\.|(?!\1)[^\\])*["']|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+(?:\.\*)?|[A-Za-z][\w-]*|[-+]?(?:\d+\.?\d*|\.\d+)|[=:])/g;
+const tokenPattern = /(["'](?:\\.|(?!\1)[^\\])*["']|#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?(?:[0-9a-fA-F]{2})?|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+(?:\.\*)?|[A-Za-z][\w-]*|[-+]?(?:\d+\.?\d*|\.\d+)|[=:])/g;
 
 function isValidScriptLine(line: string): boolean {
-  const code = line.replace(/#.*/, '').trim();
+  const code = splitScriptLineComment(line).code.trim();
   return !code || /^preset\s+[\w-]+$/i.test(code) || /^run\s+[\w-]+$/i.test(code) || /^set\s+[\w.-]+(?:\s*(?:=|:)\s*|\s+).+$/i.test(code);
 }
 
 function classifyToken(text: string): string | undefined {
   const lower = text.toLowerCase();
   if (text === '=' || text === ':') return 'script-token-operator';
-  if (/^["']/.test(text)) return 'script-token-value';
+  if (/^["']/.test(text) || /^#[0-9a-fA-F]/.test(text)) return 'script-token-value';
   if (/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(text)) return 'script-token-number';
   if (booleanWords.has(lower)) return 'script-token-boolean';
   if (commandWords.has(lower)) return 'script-token-command';
   if (actionWords.has(lower) || presetWords.has(lower)) return 'script-token-value';
-  if (pathWords.has(text) || editorPathPattern.test(text) || /^[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+(?:\.\*)?$/.test(text)) return 'script-token-path';
+  if (pathWords.has(lower) || editorPathPattern.test(text) || /^[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+(?:\.\*)?$/.test(text)) return 'script-token-path';
   return undefined;
 }
 
@@ -54,11 +54,11 @@ function tokenizeCode(code: string): Token[] {
 }
 
 function tokenizeLine(line: string): Token[] {
-  const commentStart = line.indexOf('#');
-  if (commentStart === -1) return tokenizeCode(line);
+  const { code, comment } = splitScriptLineComment(line);
+  if (!comment) return tokenizeCode(code);
   return [
-    ...tokenizeCode(line.slice(0, commentStart)),
-    { text: line.slice(commentStart), className: 'script-token-comment' }
+    ...tokenizeCode(code),
+    { text: comment, className: 'script-token-comment' }
   ];
 }
 
