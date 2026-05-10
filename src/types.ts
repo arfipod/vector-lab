@@ -7,6 +7,9 @@ export type ThresholdMode = 'manual' | 'otsu' | 'sauvola';
 export type ColorModel = 'hsl' | 'hsv';
 
 export interface LogEntry { id: string; level: LogLevel; message: string; time: number; data?: unknown; }
+export interface ProgressState { active: boolean; label: string; detail?: string; value?: number; indeterminate?: boolean; }
+export type ProgressUpdate = Omit<ProgressState, 'active'> & { active?: boolean };
+export type ProgressCallback = (progress: ProgressUpdate) => void;
 export interface SourceImage { fileName: string; fileType: string; kind: 'raster' | 'svg' | 'pdf'; width: number; height: number; imageData: ImageData; previewUrl: string; }
 export interface TraceOptions { minArea: number; simplify: number; smooth: number; precision: number; }
 

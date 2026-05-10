@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EditorSettings, LogEntry, LogLevel, PaletteItem, SourceImage, Tab, VectorOptions, VectorResult } from './types';
+import type { EditorSettings, LogEntry, LogLevel, PaletteItem, ProgressState, ProgressUpdate, SourceImage, Tab, VectorOptions, VectorResult } from './types';
 import { defaultEditorSettings, defaultVectorOptions } from './defaults';
 import { DropZone } from './components/DropZone';
 import { SliderField } from './components/SliderField';
 import { ConsolePanel } from './components/ConsolePanel';
 import { PreviewStage } from './components/PreviewStage';
+import { ProgressBar } from './components/ProgressBar';
 import { loadSourceImage, rasterSvgWrapper } from './lib/imageLoader';
 import { vectorizeImage } from './lib/vectorize';
 import { applySvgEdit, extractPalette } from './lib/svgEdit';
 import { downloadSvgPng, downloadText } from './lib/download';
 import { runScript } from './lib/scripting';
+import { yieldToBrowser } from './lib/progress';
 
 const uuid = (): string => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 const safeName = (name: string, ext: string): string => `${name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-') || 'vector-lab'}.${ext}`;
+const idleProgress: ProgressState = { active: false, label: '' };
+const progressValue = (value: number | undefined): number | undefined => typeof value === 'number' ? Math.min(1, Math.max(0, value)) : undefined;
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('vectorization');
@@ -24,11 +28,16 @@ export default function App() {
   const [vectorOptions, setVectorOptions] = useState<VectorOptions>(defaultVectorOptions);
   const [result, setResult] = useState<VectorResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<ProgressState>(idleProgress);
   const [editorSvg, setEditorSvg] = useState('');
   const [editor, setEditor] = useState<EditorSettings>(defaultEditorSettings);
   const liveSignature = useRef('');
 
   const log = useCallback((level: LogLevel, message: string, data?: unknown) => setLogs((cur) => [...cur.slice(-500), { id: uuid(), level, message, data, time: Date.now() }]), []);
+  const showProgress = useCallback((next: ProgressUpdate): void => {
+    setProgress({ active: next.active ?? true, label: next.label, detail: next.detail, value: progressValue(next.value), indeterminate: next.indeterminate ?? typeof next.value !== 'number' });
+  }, []);
+  const clearProgress = useCallback((): void => setProgress(idleProgress), []);
   const editedSvg = useMemo(() => editorSvg ? applySvgEdit(editorSvg, editor) : '', [editorSvg, editor]);
   const palette = useMemo<PaletteItem[]>(() => editorSvg ? extractPalette(editorSvg) : [], [editorSvg]);
 
@@ -40,12 +49,17 @@ export default function App() {
   }, []);
 
   const loadVectorFile = useCallback(async (file: File, maxSide = vectorOptions.maxSide): Promise<SourceImage> => {
-    log('info', `Loading source image: ${file.name}`);
-    const loaded = await loadSourceImage(file, maxSide);
-    setSourceFile(file); setSourceMaxSide(maxSide); setSource(loaded); setResult(null);
-    log('info', `Source loaded: ${loaded.width} × ${loaded.height}px`, { kind: loaded.kind });
-    return loaded;
-  }, [log, vectorOptions.maxSide]);
+    showProgress({ label: 'Loading source image', detail: file.name, indeterminate: true });
+    try {
+      log('info', `Loading source image: ${file.name}`);
+      const loaded = await loadSourceImage(file, maxSide, showProgress);
+      setSourceFile(file); setSourceMaxSide(maxSide); setSource(loaded); setResult(null);
+      log('info', `Source loaded: ${loaded.width} × ${loaded.height}px`, { kind: loaded.kind });
+      return loaded;
+    } finally {
+      clearProgress();
+    }
+  }, [clearProgress, log, showProgress, vectorOptions.maxSide]);
 
   const ensureSource = useCallback(async (options: VectorOptions): Promise<SourceImage | null> => {
     if (!source) return null;
@@ -55,17 +69,27 @@ export default function App() {
 
   const vectorize = useCallback(async (options: VectorOptions, manual: boolean): Promise<void> => {
     if (busy) return;
-    const actual = await ensureSource(options);
+    let actual: SourceImage | null = null;
+    try {
+      actual = await ensureSource(options);
+    } catch (error) {
+      log('error', `Cannot load source before vectorizing: ${(error as Error).message}`);
+      return;
+    }
     if (!actual) { log('warn', 'Load an image before vectorizing.'); return; }
     setBusy(true);
+    const progressLabel = manual ? 'Vectorizing image' : 'Updating live preview';
+    const reportVectorProgress = (next: ProgressUpdate): void => showProgress({ ...next, label: progressLabel });
     try {
+      showProgress({ label: progressLabel, detail: 'Preparing image', value: 0.02 });
+      await yieldToBrowser();
       log('info', manual ? 'Manual vectorization started.' : 'Live vectorization started.', { mode: options.mode });
-      const next = await vectorizeImage(actual.imageData, options, (message, data) => log('debug', message, data));
+      const next = await vectorizeImage(actual.imageData, options, (message, data) => log('debug', message, data), reportVectorProgress);
       setResult(next);
       if (manual && options.output.openInEditor) { setEditorSvg(next.svg); setTab('editing'); log('info', 'Vector result opened in Editing.'); }
     } catch (error) { log('error', `Vectorization failed: ${(error as Error).message}`); }
-    finally { setBusy(false); }
-  }, [busy, ensureSource, log]);
+    finally { setBusy(false); clearProgress(); }
+  }, [busy, clearProgress, ensureSource, log, showProgress]);
 
   useEffect(() => {
     if (!vectorOptions.livePreview || !source || busy) return;
@@ -75,17 +99,39 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [busy, source, vectorOptions, vectorize]);
 
+  const loadEditorRasterFile = useCallback(async (file: File): Promise<void> => {
+    showProgress({ label: 'Loading source image', detail: file.name, indeterminate: true });
+    try {
+      const img = await loadSourceImage(file, vectorOptions.maxSide, showProgress);
+      setEditorSvg(rasterSvgWrapper(img.imageData));
+      setTab('editing');
+      log('warn', 'Raster/PDF loaded as an SVG image wrapper. Use Vectorization for editable paths.');
+    } catch (e) {
+      log('error', `Cannot load editor file: ${(e as Error).message}`);
+    } finally {
+      clearProgress();
+    }
+  }, [clearProgress, log, showProgress, vectorOptions.maxSide]);
+
   const onVectorFiles = (files: FileList): void => { const file = files[0]; if (file) void loadVectorFile(file).catch((e) => log('error', `Cannot load file: ${(e as Error).message}`)); };
   const onEditorFiles = (files: FileList): void => {
     const file = files[0]; if (!file) return; const lower = file.name.toLowerCase(); log('info', `Loading editor file: ${file.name}`);
     if (lower.endsWith('.svg') || file.type === 'image/svg+xml') void file.text().then((text) => { setEditorSvg(text); setTab('editing'); log('info', 'SVG loaded into editor.'); }).catch((e) => log('error', `Cannot read SVG: ${(e as Error).message}`));
-    else void loadSourceImage(file, vectorOptions.maxSide).then((img) => { setEditorSvg(rasterSvgWrapper(img.imageData)); setTab('editing'); log('warn', 'Raster/PDF loaded as an SVG image wrapper. Use Vectorization for editable paths.'); }).catch((e) => log('error', `Cannot load editor file: ${(e as Error).message}`));
+    else void loadEditorRasterFile(file);
   };
 
   const sendToEditor = (): void => { if (!result) return; setEditorSvg(result.svg); setTab('editing'); log('info', 'Vector result sent to Editing.'); };
   const currentSvg = tab === 'editing' ? editedSvg : result?.svg;
   const exportSvg = (): void => { if (!currentSvg) return; downloadText(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'svg'), currentSvg); log('info', 'SVG exported.'); };
-  const exportPng = (): void => { if (!currentSvg) return; void downloadSvgPng(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'png'), currentSvg).then(() => log('info', 'PNG exported.')).catch((e) => log('error', `PNG export failed: ${(e as Error).message}`)); };
+  const exportPng = (): void => {
+    if (!currentSvg) return;
+    showProgress({ label: 'Exporting PNG', detail: 'Preparing SVG', value: 0.05 });
+    log('info', 'PNG export started.');
+    void downloadSvgPng(safeName(tab === 'editing' ? 'edited-vector' : source?.fileName ?? 'vectorized', 'png'), currentSvg, 2, showProgress)
+      .then(() => log('info', 'PNG exported.'))
+      .catch((e) => log('error', `PNG export failed: ${(e as Error).message}`))
+      .finally(clearProgress);
+  };
   const runVectorScript = (script: string): void => { try { const out = runScript(script, vectorOptions, editor); setVectorOptions(out.options); setEditor(out.editor); out.messages.forEach((m) => log('info', `Script: ${m}`)); out.actions.forEach((a) => { if (a === 'vectorize') void vectorize(out.options, true); if (a === 'send-to-editor') sendToEditor(); if (a === 'export-svg') exportSvg(); if (a === 'export-png') exportPng(); }); } catch (e) { log('error', `Script error: ${(e as Error).message}`); } };
 
   const setBg = <K extends keyof VectorOptions['background']>(key: K, value: VectorOptions['background'][K]): void => setVectorOptions((o) => ({ ...o, background: { ...o.background, [key]: value } }));
@@ -104,6 +150,7 @@ export default function App() {
     : null, [result, source, tab]);
 
   return <div className="app-shell">
+    <ProgressBar progress={progress} />
     <header className={`app-header ${headerHidden ? 'hidden' : ''}`}><div className="brand"><div className="brand-mark">VL</div><div><h1>Vector Lab Studio</h1><p>SVG editing and bitmap vectorization</p></div></div><nav className="tabs"><button className={tab === 'editing' ? 'active' : ''} onClick={() => setTab('editing')}>Editing</button><button className={tab === 'vectorization' ? 'active' : ''} onClick={() => setTab('vectorization')}>Vectorization</button></nav></header>
     <main className="workspace">
       <aside className="side-panel">

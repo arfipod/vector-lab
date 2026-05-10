@@ -1,6 +1,7 @@
-import type { TraceOptions, VectorOptions, VectorResult, VectorStats } from '../types';
+import type { ProgressCallback, TraceOptions, VectorOptions, VectorResult, VectorStats } from '../types';
 import { fmt, labDist2, luma, oklabToRgb, rgbToOklab, toHex, type Oklab, type Rgb } from './color';
 import { blurImageData } from './imageLoader';
+import { yieldToBrowser } from './progress';
 
 interface BackgroundResult { mask: Uint8Array; pixels: number; paper: Rgb; }
 interface QuantResult { labels: Int16Array; colors: string[]; counts: number[]; }
@@ -9,6 +10,7 @@ interface Point { x: number; y: number; }
 const esc = (s: string): string => s.replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&apos;', '"': '&quot;' }[c] ?? c));
 const pixelRgb = (data: Uint8ClampedArray, p: number): Rgb => ({ r: data[p * 4], g: data[p * 4 + 1], b: data[p * 4 + 2] });
 const countMask = (mask: Uint8Array): number => { let n = 0; for (const v of mask) n += v; return n; };
+const reportProgress = (progress: ProgressCallback | undefined, detail: string, value?: number, indeterminate = false): void => progress?.({ label: 'Vectorizing image', detail, value, indeterminate });
 
 function median(values: number[]): number { if (!values.length) return 255; const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; }
 function estimatePaper(img: ImageData, options: VectorOptions['background']): Rgb {
@@ -55,8 +57,54 @@ interface Sample { rgb: Rgb; lab: Oklab; }
 function rng(seed: number): () => number { let s = seed >>> 0; return () => ((s = (1664525 * s + 1013904223) >>> 0) / 0xffffffff); }
 function nearest(lab: Oklab, centers: Oklab[]): number { let best = 0, bd = Infinity; centers.forEach((c, i) => { const d = labDist2(lab, c); if (d < bd) { bd = d; best = i; } }); return best; }
 function samples(img: ImageData, ignore: Uint8Array, limit: number): Sample[] { const ids: number[] = []; for (let p = 0; p < ignore.length; p++) if (!ignore[p]) ids.push(p); const step = Math.max(1, Math.ceil(ids.length / limit)); const out: Sample[] = []; for (let i = 0; i < ids.length; i += step) { const rgb = pixelRgb(img.data, ids[i]); out.push({ rgb, lab: rgbToOklab(rgb) }); } return out; }
-function kmeans(ss: Sample[], k: number, iterations: number): Oklab[] { const rand = rng(ss.length + k * 997); k = Math.max(1, Math.min(k, ss.length)); const centers: Oklab[] = [ss[Math.floor(rand() * ss.length)].lab]; const dist = new Float64Array(ss.length); while (centers.length < k) { let total = 0; for (let i = 0; i < ss.length; i++) { let d = Infinity; for (const c of centers) d = Math.min(d, labDist2(ss[i].lab, c)); dist[i] = d; total += d; } let pick = rand() * total; let idx = ss.length - 1; for (let i = 0; i < ss.length; i++) { pick -= dist[i]; if (pick <= 0) { idx = i; break; } } centers.push(ss[idx].lab); }
-  for (let it = 0; it < iterations; it++) { const sums = centers.map(() => ({ l: 0, a: 0, b: 0, n: 0 })); for (const s of ss) { const c = nearest(s.lab, centers); sums[c].l += s.lab.l; sums[c].a += s.lab.a; sums[c].b += s.lab.b; sums[c].n++; } let moved = 0; for (let i = 0; i < centers.length; i++) { if (!sums[i].n) { centers[i] = ss[Math.floor(rand() * ss.length)].lab; continue; } const next = { l: sums[i].l / sums[i].n, a: sums[i].a / sums[i].n, b: sums[i].b / sums[i].n }; moved += labDist2(centers[i], next); centers[i] = next; } if (moved < 1e-7) break; } return centers; }
+async function kmeans(ss: Sample[], k: number, iterations: number, onIteration?: (iteration: number, total: number) => void): Promise<Oklab[]> {
+  const rand = rng(ss.length + k * 997);
+  k = Math.max(1, Math.min(k, ss.length));
+  const centers: Oklab[] = [ss[Math.floor(rand() * ss.length)].lab];
+  const dist = new Float64Array(ss.length);
+  while (centers.length < k) {
+    let total = 0;
+    for (let i = 0; i < ss.length; i++) {
+      let d = Infinity;
+      for (const c of centers) d = Math.min(d, labDist2(ss[i].lab, c));
+      dist[i] = d;
+      total += d;
+    }
+    let pick = rand() * total;
+    let idx = ss.length - 1;
+    for (let i = 0; i < ss.length; i++) {
+      pick -= dist[i];
+      if (pick <= 0) { idx = i; break; }
+    }
+    centers.push(ss[idx].lab);
+  }
+  await yieldToBrowser();
+  const totalIterations = Math.max(1, Math.ceil(iterations));
+  for (let it = 0; it < iterations; it++) {
+    const sums = centers.map(() => ({ l: 0, a: 0, b: 0, n: 0 }));
+    for (const s of ss) {
+      const c = nearest(s.lab, centers);
+      sums[c].l += s.lab.l;
+      sums[c].a += s.lab.a;
+      sums[c].b += s.lab.b;
+      sums[c].n++;
+    }
+    let moved = 0;
+    for (let i = 0; i < centers.length; i++) {
+      if (!sums[i].n) {
+        centers[i] = ss[Math.floor(rand() * ss.length)].lab;
+        continue;
+      }
+      const next = { l: sums[i].l / sums[i].n, a: sums[i].a / sums[i].n, b: sums[i].b / sums[i].n };
+      moved += labDist2(centers[i], next);
+      centers[i] = next;
+    }
+    onIteration?.(it + 1, totalIterations);
+    if ((it + 1) % 4 === 0) await yieldToBrowser();
+    if (moved < 1e-7) break;
+  }
+  return centers;
+}
 function medianCut(ss: Sample[], k: number): Oklab[] {
   const channels: Array<keyof Rgb> = ['r', 'g', 'b'];
   let boxes: Sample[][] = [ss];
@@ -84,7 +132,29 @@ function medianCut(ss: Sample[], k: number): Oklab[] {
     return { l: sum.l / box.length, a: sum.a / box.length, b: sum.b / box.length };
   });
 }
-function quantize(img: ImageData, ignore: Uint8Array, options: VectorOptions['color']): QuantResult { const ss = samples(img, ignore, options.sampleLimit); const labels = new Int16Array(img.width * img.height); labels.fill(-1); if (!ss.length) return { labels, colors: [], counts: [] }; const centers = options.quantizer === 'rgb-median-cut' ? medianCut(ss, options.colors) : kmeans(ss, options.colors, options.iterations); const rawCounts = new Array<number>(centers.length).fill(0); for (let p = 0; p < labels.length; p++) if (!ignore[p]) { const c = nearest(rgbToOklab(pixelRgb(img.data, p)), centers); labels[p] = c; rawCounts[c]++; } const remap = new Int16Array(centers.length); remap.fill(-1); const colors: string[] = [], counts: number[] = []; centers.forEach((c, i) => { if (rawCounts[i] >= options.minClusterPixels) { remap[i] = colors.length; colors.push(toHex(oklabToRgb(c))); counts.push(rawCounts[i]); } }); for (let p = 0; p < labels.length; p++) if (labels[p] >= 0) labels[p] = remap[labels[p]]; return { labels, colors, counts }; }
+async function quantize(img: ImageData, ignore: Uint8Array, options: VectorOptions['color'], progress?: ProgressCallback): Promise<QuantResult> {
+  reportProgress(progress, 'Sampling colors', 0.38);
+  await yieldToBrowser();
+  const ss = samples(img, ignore, options.sampleLimit);
+  const labels = new Int16Array(img.width * img.height);
+  labels.fill(-1);
+  if (!ss.length) return { labels, colors: [], counts: [] };
+  const centers = options.quantizer === 'rgb-median-cut'
+    ? (reportProgress(progress, 'Splitting RGB color boxes', 0.48), await yieldToBrowser(), medianCut(ss, options.colors))
+    : await kmeans(ss, options.colors, options.iterations, (iteration, total) => {
+      reportProgress(progress, `Quantizing colors (${iteration}/${total})`, 0.4 + (iteration / total) * 0.18);
+    });
+  reportProgress(progress, 'Assigning quantized colors', 0.58);
+  await yieldToBrowser();
+  const rawCounts = new Array<number>(centers.length).fill(0);
+  for (let p = 0; p < labels.length; p++) if (!ignore[p]) { const c = nearest(rgbToOklab(pixelRgb(img.data, p)), centers); labels[p] = c; rawCounts[c]++; }
+  const remap = new Int16Array(centers.length);
+  remap.fill(-1);
+  const colors: string[] = [], counts: number[] = [];
+  centers.forEach((c, i) => { if (rawCounts[i] >= options.minClusterPixels) { remap[i] = colors.length; colors.push(toHex(oklabToRgb(c))); counts.push(rawCounts[i]); } });
+  for (let p = 0; p < labels.length; p++) if (labels[p] >= 0) labels[p] = remap[labels[p]];
+  return { labels, colors, counts };
+}
 
 function area(poly: Point[]): number { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.y - q.x * p.y; } return a / 2; }
 function pd(p: Point, a: Point, b: Point): number { const dx = b.x - a.x, dy = b.y - a.y; return dx || dy ? Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / Math.hypot(dx, dy) : Math.hypot(p.x - a.x, p.y - a.y); }
@@ -98,16 +168,111 @@ function merge(a: Uint8Array, b: Uint8Array): Uint8Array { const out = new Uint8
 function strokeAttrs(fill: string, width: number): string { return width > 0 ? ` stroke="${esc(fill)}" stroke-width="${fmt(width, 3)}" stroke-linejoin="round" stroke-linecap="round"` : ''; }
 function svg(width: number, height: number, body: string, options: VectorOptions, title: string): string { const bg = options.output.addBackground ? `<rect width="100%" height="100%" fill="${esc(options.output.backgroundColor)}"/>` : ''; return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-vector-lab="studio" data-vector-mode="${options.mode}"><title>${esc(title)}</title>${bg}${body}</svg>`; }
 
-export async function vectorizeImage(input: ImageData, options: VectorOptions, log?: (message: string, data?: unknown) => void): Promise<VectorResult> {
-  const started = performance.now(); const imageCache = new Map<number, ImageData>(); const blurred = (amount: number): ImageData => { const radius = Math.max(0, amount); if (radius <= 0) return input; const cached = imageCache.get(radius); if (cached) return cached; const next = blurImageData(input, radius); imageCache.set(radius, next); return next; };
-  const bgImg = blurred(options.blur); const bg = buildBackground(bgImg, options.background); const warnings: string[] = []; const { width, height } = bgImg; const total = width * height; const colorImg = blurred(options.color.blur ?? options.blur); const lineImg = blurred(options.binary.blur ?? options.blur); const colorTrace = options.color.trace ?? options.trace; const lineTrace = options.binary.trace ?? options.trace; log?.('Background mask built', { paper: bg.paper, backgroundPixels: bg.pixels });
-  if (options.background.showMask) { const fg = new Uint8Array(total); for (let i = 0; i < total; i++) fg[i] = bg.mask[i] ? 0 : 1; const tr = trace(fg, width, height, options.trace); const body = `<g fill="#111827" fill-rule="evenodd"><path d="${tr.d}"/></g>`; return { svg: svg(width, height, body, options, 'Foreground mask preview'), stats: { width, height, paths: tr.d ? 1 : 0, contours: tr.contours, colors: 1, backgroundPixels: bg.pixels, foregroundPixels: total - bg.pixels, elapsedMs: performance.now() - started, warnings: ['Mask preview: dark areas are retained foreground.'] } }; }
+export async function vectorizeImage(input: ImageData, options: VectorOptions, log?: (message: string, data?: unknown) => void, progress?: ProgressCallback): Promise<VectorResult> {
+  const started = performance.now();
+  const imageCache = new Map<number, ImageData>();
+  const blurred = (amount: number): ImageData => {
+    const radius = Math.max(0, amount);
+    if (radius <= 0) return input;
+    const cached = imageCache.get(radius);
+    if (cached) return cached;
+    const next = blurImageData(input, radius);
+    imageCache.set(radius, next);
+    return next;
+  };
+
+  reportProgress(progress, 'Preparing image', 0.04);
+  await yieldToBrowser();
+  const bgImg = blurred(options.blur);
+  const warnings: string[] = [];
+  const { width, height } = bgImg;
+  const total = width * height;
+  const colorTrace = options.color.trace ?? options.trace;
+  const lineTrace = options.binary.trace ?? options.trace;
+
+  reportProgress(progress, 'Detecting background', 0.14);
+  await yieldToBrowser();
+  const bg = buildBackground(bgImg, options.background);
+  log?.('Background mask built', { paper: bg.paper, backgroundPixels: bg.pixels });
+
+  if (options.background.showMask) {
+    reportProgress(progress, 'Tracing foreground mask', 0.72);
+    await yieldToBrowser();
+    const fg = new Uint8Array(total);
+    for (let i = 0; i < total; i++) fg[i] = bg.mask[i] ? 0 : 1;
+    const tr = trace(fg, width, height, options.trace);
+    reportProgress(progress, 'Building SVG', 0.94);
+    await yieldToBrowser();
+    const body = `<g fill="#111827" fill-rule="evenodd"><path d="${tr.d}"/></g>`;
+    const stats: VectorStats = { width, height, paths: tr.d ? 1 : 0, contours: tr.contours, colors: 1, backgroundPixels: bg.pixels, foregroundPixels: total - bg.pixels, elapsedMs: performance.now() - started, warnings: ['Mask preview: dark areas are retained foreground.'] };
+    log?.('Vectorization complete', stats);
+    reportProgress(progress, 'Vectorization complete', 1);
+    return { svg: svg(width, height, body, options, 'Foreground mask preview'), stats };
+  }
+
   let body = '', paths = 0, contours = 0, colors = 0;
-  const addLayer = (id: string, mask: Uint8Array, fill: string, traceOptions: TraceOptions, strokeWidth = 0): void => { const tr = trace(mask, width, height, traceOptions); if (!tr.d) return; body += `<g id="${id}" fill="${esc(fill)}" fill-rule="evenodd"${strokeAttrs(fill, strokeWidth)}><path d="${tr.d}"/></g>`; paths++; contours += tr.contours; colors++; };
-  if (options.mode === 'binary') addLayer('lineart-layer', binaryMask(lineImg, bg.mask, options.binary), options.binary.fill, lineTrace, options.binary.strokeWidth ?? 0);
-  else { let ignore = bg.mask; let line: Uint8Array | null = null; if (options.mode === 'layered' || options.color.excludeLineart) { line = binaryMask(lineImg, bg.mask, { ...options.binary, thresholdMode: 'manual', threshold: options.color.lineartDarkness, invert: false }); if (options.color.excludeLineart) ignore = merge(ignore, line); }
-    const q = quantize(colorImg, ignore, options.color); const order = q.colors.map((color, index) => ({ color, index, count: q.counts[index] ?? 0 })).sort((a, b) => b.count - a.count); let colorBody = ''; for (const item of order) { const tr = trace(labelMask(q.labels, item.index), width, height, colorTrace); if (!tr.d) continue; colorBody += `<path fill="${esc(item.color)}" fill-rule="evenodd"${strokeAttrs(item.color, options.color.underpaintStrokeWidth ?? 0)} d="${tr.d}"/>`; paths++; contours += tr.contours; colors++; } if (colorBody) body += `<g id="color-layer">${colorBody}</g>`; if (options.mode === 'layered' && line) addLayer('lineart-layer', line, options.binary.fill, lineTrace, options.binary.strokeWidth ?? 0); }
-  if (!paths) warnings.push('No paths were generated. Lower background tolerance, threshold, or minimum area.'); if (bg.pixels < total * 0.02 && options.background.enabled) warnings.push('Very little background was removed. Try higher tolerance or edge-connected mode.'); if (bg.pixels > total * 0.85) warnings.push('Most pixels were removed as background. Lower tolerance or minimum lightness.');
+  const addLayer = (id: string, mask: Uint8Array, fill: string, traceOptions: TraceOptions, strokeWidth = 0): void => {
+    const tr = trace(mask, width, height, traceOptions);
+    if (!tr.d) return;
+    body += `<g id="${id}" fill="${esc(fill)}" fill-rule="evenodd"${strokeAttrs(fill, strokeWidth)}><path d="${tr.d}"/></g>`;
+    paths++;
+    contours += tr.contours;
+    colors++;
+  };
+
+  if (options.mode === 'binary') {
+    const lineImg = blurred(options.binary.blur ?? options.blur);
+    reportProgress(progress, 'Creating lineart mask', 0.32);
+    await yieldToBrowser();
+    const lineMask = binaryMask(lineImg, bg.mask, options.binary);
+    reportProgress(progress, 'Tracing lineart', 0.74);
+    await yieldToBrowser();
+    addLayer('lineart-layer', lineMask, options.binary.fill, lineTrace, options.binary.strokeWidth ?? 0);
+  } else {
+    const colorImg = blurred(options.color.blur ?? options.blur);
+    const lineImg = blurred(options.binary.blur ?? options.blur);
+    let ignore = bg.mask;
+    let line: Uint8Array | null = null;
+    if (options.mode === 'layered' || options.color.excludeLineart) {
+      reportProgress(progress, 'Creating lineart mask', 0.28);
+      await yieldToBrowser();
+      line = binaryMask(lineImg, bg.mask, { ...options.binary, thresholdMode: 'manual', threshold: options.color.lineartDarkness, invert: false });
+      if (options.color.excludeLineart) ignore = merge(ignore, line);
+    }
+
+    reportProgress(progress, 'Quantizing colors', 0.36);
+    await yieldToBrowser();
+    const q = await quantize(colorImg, ignore, options.color, progress);
+    const order = q.colors.map((color, index) => ({ color, index, count: q.counts[index] ?? 0 })).sort((a, b) => b.count - a.count);
+    let colorBody = '';
+    const layerCount = Math.max(1, order.length);
+    for (let i = 0; i < order.length; i++) {
+      const item = order[i];
+      reportProgress(progress, `Tracing color layer ${i + 1}/${layerCount}`, 0.62 + (i / layerCount) * 0.2);
+      await yieldToBrowser();
+      const tr = trace(labelMask(q.labels, item.index), width, height, colorTrace);
+      if (!tr.d) continue;
+      colorBody += `<path fill="${esc(item.color)}" fill-rule="evenodd"${strokeAttrs(item.color, options.color.underpaintStrokeWidth ?? 0)} d="${tr.d}"/>`;
+      paths++;
+      contours += tr.contours;
+      colors++;
+    }
+    if (colorBody) body += `<g id="color-layer">${colorBody}</g>`;
+    if (options.mode === 'layered' && line) {
+      reportProgress(progress, 'Tracing lineart', 0.86);
+      await yieldToBrowser();
+      addLayer('lineart-layer', line, options.binary.fill, lineTrace, options.binary.strokeWidth ?? 0);
+    }
+  }
+
+  reportProgress(progress, 'Building SVG', 0.94);
+  await yieldToBrowser();
+  if (!paths) warnings.push('No paths were generated. Lower background tolerance, threshold, or minimum area.');
+  if (bg.pixels < total * 0.02 && options.background.enabled) warnings.push('Very little background was removed. Try higher tolerance or edge-connected mode.');
+  if (bg.pixels > total * 0.85) warnings.push('Most pixels were removed as background. Lower tolerance or minimum lightness.');
   const stats: VectorStats = { width, height, paths, contours, colors, backgroundPixels: bg.pixels, foregroundPixels: total - bg.pixels, elapsedMs: performance.now() - started, warnings };
-  log?.('Vectorization complete', stats); return { svg: svg(width, height, body, options, `Vectorized ${options.mode}: ${paths} paths, ${contours} contours`), stats };
+  const outputSvg = svg(width, height, body, options, `Vectorized ${options.mode}: ${paths} paths, ${contours} contours`);
+  log?.('Vectorization complete', stats);
+  reportProgress(progress, 'Vectorization complete', 1);
+  return { svg: outputSvg, stats };
 }

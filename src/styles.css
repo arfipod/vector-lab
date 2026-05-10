@@ -36,6 +36,15 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
 .app-shell { min-height: 100vh; padding-bottom: 340px; }
+.progress-overlay { position: fixed; inset: 0 0 auto; z-index: 60; display: grid; gap: 0.45rem; pointer-events: none; }
+.progress-track { height: 3px; overflow: hidden; background: rgba(148, 163, 184, 0.22); }
+.progress-fill { width: 100%; height: 100%; transform-origin: left center; background: linear-gradient(90deg, var(--accent), var(--ok), var(--warning)); transition: transform 180ms ease; }
+.progress-overlay.indeterminate .progress-fill { width: 42%; transform-origin: center; animation: progress-sweep 1.1s ease-in-out infinite; }
+.progress-status { justify-self: center; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; max-width: min(42rem, calc(100vw - 1.5rem)); padding: 0.42rem 0.65rem; border: 1px solid rgba(122, 183, 255, 0.42); border-radius: 999px; color: var(--text); background: rgba(10, 15, 28, 0.92); box-shadow: 0 14px 34px rgba(0,0,0,0.32); backdrop-filter: blur(14px); }
+.progress-status strong, .progress-status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-status strong { font-size: 0.82rem; }
+.progress-status span { color: var(--muted); font-size: 0.78rem; }
+.progress-status output { min-width: 2.6rem; color: #f7fbff; font-size: 0.78rem; font-variant-numeric: tabular-nums; text-align: right; }
 .app-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border); background: rgba(11, 16, 32, 0.88); backdrop-filter: blur(16px); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22); transition: transform 180ms ease, opacity 180ms ease; }
 .app-header.hidden { transform: translateY(calc(-100% - 1px)); opacity: 0.15; }
 .brand { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
@@ -134,6 +143,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monos
 .script-token-operator { color: #ff8fa3; font-weight: 700; }
 .script-token-error { color: #ff8fa3; text-decoration: underline wavy rgba(255, 107, 122, 0.85); text-underline-offset: 0.18em; }
 .console-feedback { grid-column: 1 / -1; margin: -0.2rem 0 0; color: var(--warning); font-size: 0.82rem; }
+
+@keyframes progress-sweep {
+  0% { transform: translateX(-120%) scaleX(0.72); }
+  50% { transform: translateX(85%) scaleX(1); }
+  100% { transform: translateX(260%) scaleX(0.72); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill { transition: none; }
+  .progress-overlay.indeterminate .progress-fill { animation-duration: 2.5s; }
+}
 
 @media (max-width: 920px) {
   .app-shell { padding-bottom: 380px; }
