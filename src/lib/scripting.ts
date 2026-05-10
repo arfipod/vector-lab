@@ -13,6 +13,9 @@ const aliases: Record<string, string> = {
   'trace.minArea': 'trace.minArea', 'trace.simplify': 'trace.simplify', 'trace.smooth': 'trace.smooth', 'trace.precision': 'trace.precision',
   'output.openInEditor': 'output.openInEditor', 'output.background': 'output.addBackground'
 };
+export const scriptOptionPaths = Object.freeze(Object.keys(aliases));
+export const scriptActions = Object.freeze(['vectorize', 'send-to-editor', 'open-editor', 'export-svg', 'export-png'] as const);
+export const scriptPresetNames = Object.freeze(Object.keys(presets));
 function clone<T>(v: T): T { return structuredClone(v); }
 function parse(raw: string): unknown { const v = raw.trim(); if (/^(true|yes|on)$/i.test(v)) return true; if (/^(false|no|off)$/i.test(v)) return false; const n = Number(v.replace(',', '.')); return Number.isFinite(n) && v !== '' ? n : v.replace(/^['"]|['"]$/g, ''); }
 function setPath(obj: Record<string, unknown>, path: string, value: unknown): void { const parts = path.split('.'); let cur = obj; for (let i = 0; i < parts.length - 1; i++) { if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {}; cur = cur[parts[i]] as Record<string, unknown>; } cur[parts[parts.length - 1]] = value; }

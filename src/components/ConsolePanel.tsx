@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LogEntry } from '../types';
 import { scriptHelp } from '../lib/scripting';
+import { ScriptEditor } from './ScriptEditor';
 interface Props { logs: LogEntry[]; onClear: () => void; onRunScript: (script: string) => void; }
 export function ConsolePanel({ logs, onClear, onRunScript }: Props) {
   const [open, setOpen] = useState(true); const [script, setScript] = useState(scriptHelp);
@@ -54,7 +55,7 @@ export function ConsolePanel({ logs, onClear, onRunScript }: Props) {
       <div className="log-stream" ref={logStreamRef} aria-label="Console log stream">{logs.map((l) => <div key={l.id} className={`log-line ${l.level}`}><span>{new Date(l.time).toLocaleTimeString()}</span><strong>{l.level}</strong><p>{l.message}</p></div>)}</div>
       <div className="script-box">
         <div className="script-header"><strong>Script</strong><div className="script-actions"><button type="button" onClick={() => void copyText(script, 'script')}>{copyState === 'script' ? 'Copied script' : 'Copy script'}</button><button className="primary" type="button" onClick={() => onRunScript(script)}>Run script</button></div></div>
-        <textarea spellCheck={false} value={script} onChange={(e) => setScript(e.target.value)} />
+        <ScriptEditor ariaLabel="Vector Lab script editor" value={script} onChange={setScript} />
       </div>
       {copyState === 'failed' ? <p className="console-feedback" role="status">Copy failed. Clipboard access is unavailable in this browser.</p> : null}
     </div> : null}
